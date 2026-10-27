@@ -66,7 +66,7 @@ google-generativeai==0.8.3
 ollama==0.4.7
 
 # Source Control
-PyGithub==2.5.0
+PyGithub==2.10.0
 gitpython==3.2.1
 
 # Test/dev tooling lives in requirements-dev.txt and is intentionally omitted
