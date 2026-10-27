@@ -42,21 +42,68 @@ ffinn/
 
 ## Quick Start
 
-### Option A — Docker Compose
+You only need two things installed: **[Git](https://git-scm.com/downloads)** and **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (open it once so it's running). No Python, Node or database setup.
+
+**1. Get the code and start it**
 
 ```bash
-docker compose up --build
+git clone https://github.com/bplogan/ffinn.git
+cd ffinn
+docker compose up -d --build --wait
 ```
 
-- API: `http://localhost:8000`
-- App: `http://localhost:3000`
-- Default admin: `admin@localhost` / `ChangeMe123!`
+The first run downloads and builds everything, so give it a few minutes. The command finishes once the app is ready.
 
-> **Local development only.** `docker-compose.yml` ships well-known development secrets (JWT key, encryption key, admin password, database password). Never expose this stack to the internet or reuse these values; for any real deployment, generate your own and set `ENVIRONMENT=production`. In production the backend refuses to start if `JWT_SECRET_KEY` is shorter than 32 characters, `ENCRYPTION_KEY` is empty or shorter than 32 characters, or `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `CALLBACK_TOKEN` or `DEFAULT_ADMIN_PASSWORD` is a value published in this repo (`docker-compose.yml`, `.env.example`, the CI workflows, or anything starting with `CHANGE-THIS`); `STAGING_DEMO_PASSWORD` is checked too when `SEED_STAGING_DEMO=true`. It does not check the database password or judge the strength of other values.
+**2. Sign in**
 
-### Option B — Local development
+Open **http://localhost:3000/auth/login** and sign in with:
 
-#### Backend
+- Email: `admin@localhost`
+- Password: `ChangeMe123!`
+
+That's it, ffinn is running.
+
+**3. Try it (about 2 minutes)**
+
+1. Go to **AI Agent → Agents → Create an agent**.
+2. Give it a name, pick an instructions template (for example **Customer support**), choose a provider and paste your API key. OpenAI, Claude, Gemini (has a free tier) and others work. Click **Test connection**, then **Create agent**.
+3. Open the agent and start chatting.
+
+Using **Ollama** on your own machine? With Docker, set its URL to `http://host.docker.internal:11434`, not `localhost`.
+
+The **build agent** (turns feature requests into pull requests) also needs a GitHub repository connected under **AI Agent → Source Control**. Do that once the basics are working.
+
+### Stop, restart or start over
+
+| To | Run |
+|---|---|
+| Stop ffinn | `docker compose down` |
+| Start it again | `docker compose up -d --wait` |
+| Wipe all data and start fresh | `docker compose down -v` |
+| See what went wrong | `docker compose logs api` |
+
+### If something goes wrong
+
+| Problem | Fix |
+|---|---|
+| `Cannot connect to the Docker daemon` / `dockerDesktopLinuxEngine` | Docker Desktop isn't running. Open it, wait until it says it's running, then run the command again. |
+| `port is already allocated` / `address already in use` | Something else is using port 3000 or 8000 (often another dev server). Stop it, or change the left-hand port in `docker-compose.yml`. |
+| Sign-in says the password is wrong | You probably started ffinn before with a different admin password. Run `docker compose down -v` to reset, then start again. |
+| Anything else | Run `docker compose logs api` and [open an issue](https://github.com/bplogan/ffinn/issues) with the output. |
+
+> This setup uses public development passwords and keys, so keep it on your own machine. See [Deploying](#deploying) before putting ffinn online.
+
+## Developing without Docker
+
+Only needed if you want to change the code with hot reload. You need **Python 3.12**, **Node.js 20 or newer**, and Docker for the database.
+
+**Database** (from the repo root):
+
+```bash
+docker compose up -d db
+```
+
+**Backend** (in one terminal):
 
 ```bash
 cd python-backend
@@ -64,24 +111,23 @@ python -m venv .venv
 # Windows: .\.venv\Scripts\Activate.ps1
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env   # fill in your values
+cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
-API available at `http://localhost:8000`  
-Swagger docs at `http://localhost:8000/docs`
+The defaults in `.env.example` already match the Docker database, so you don't need to edit anything. API docs are at http://localhost:8000/docs.
 
-#### Frontend
+**Frontend** (in a second terminal):
 
 ```bash
 cd nextjs-frontend
 npm install
-cp .env.example .env.local   # set NEXT_PUBLIC_API_URL=http://localhost:8000
+cp .env.example .env.local
 npm run dev
 ```
 
-App available at `http://localhost:3000`
+Open http://localhost:3000 and sign in with the same admin account.
 
 ## Tech Stack
 
@@ -123,6 +169,8 @@ Copy `python-backend/.env.example` for a full list.
 | `NEXT_PUBLIC_API_URL` | Base URL of the backend API |
 
 ## Deploying
+
+**Before going live:** generate your own secrets and set `ENVIRONMENT=production`. In production the backend refuses to start if `JWT_SECRET_KEY` is shorter than 32 characters, `ENCRYPTION_KEY` is empty or shorter than 32 characters, or `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `CALLBACK_TOKEN` or `DEFAULT_ADMIN_PASSWORD` is a value published in this repo (`docker-compose.yml`, `.env.example`, the CI workflows, or anything starting with `CHANGE-THIS`); `STAGING_DEMO_PASSWORD` is checked too when `SEED_STAGING_DEMO=true`. It does not check the database password or judge the strength of other values.
 
 The deploy workflows in `.github/workflows/` (`aws-deploy-*.yml`, `ai-agent-*.yml`) ship ffinn.ca itself and only run in `bplogan/ffinn`. If you fork ffinn, change the `github.repository` guards and configure your own secrets and variables (the `secrets.*` and `vars.*` the workflows reference). [`infra/aws/README.md`](infra/aws/README.md) documents the AWS setup (Lightsail, Caddy, ECR, staging for the build agent, DNS, rollback). The portal's Cloud Setup page can provision other clouds, and the build agent's workflow templates are in `python-backend/app/ai_agent/templates/workflows/`. Nothing in this repository contains credentials, and you should never commit yours.
 

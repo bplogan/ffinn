@@ -17,61 +17,81 @@ const sections: Section[] = [
         id: 'quickstart', title: 'Quick Start',
         content: `# Quick Start
 
-Get ffinn running locally in under five minutes.
+You only need **Git** and **Docker Desktop** (open it once so it's running). No Python, Node or database setup.
 
-## Option A: Docker Compose
+## 1. Get the code and start it
 
 \`\`\`bash
 git clone https://github.com/bplogan/ffinn.git
 cd ffinn
-docker compose up --build
+docker compose up -d --build --wait
 \`\`\`
 
-This starts PostgreSQL, the API (\`http://localhost:8000\`) and the web app (\`http://localhost:3000\`). Sign in with the development admin \`admin@localhost\` / \`ChangeMe123!\`.
+The first run downloads and builds everything, so give it a few minutes. The command finishes once the app is ready.
 
-> **Local development only.** \`docker-compose.yml\` ships well-known development secrets. Never expose it to the internet. For any real deployment, generate your own secrets and set \`ENVIRONMENT=production\`, which rejects the placeholder defaults.
+## 2. Sign in
 
-## Option B: Run the services yourself
+Open \`http://localhost:3000/auth/login\` and sign in with \`admin@localhost\` / \`ChangeMe123!\`.
 
-**Prerequisites**
+## 3. Try it
 
-- **Python 3.12+** - backend API
-- **Node.js 22+** - frontend
-- **PostgreSQL** - the database
+1. Go to **AI Agent → Agents → Create an agent**.
+2. Give it a name, pick an instructions template, choose a provider and paste your API key. Click **Test connection**, then **Create agent**.
+3. Open the agent and start chatting.
 
-**Backend**
+Using **Ollama** on your own machine? With Docker, set its URL to \`http://host.docker.internal:11434\`, not \`localhost\`.
+
+## Stop, restart or start over
+
+| To | Run |
+|---|---|
+| Stop ffinn | \`docker compose down\` |
+| Start it again | \`docker compose up -d --wait\` |
+| Wipe all data and start fresh | \`docker compose down -v\` |
+| See what went wrong | \`docker compose logs api\` |
+
+## If something goes wrong
+
+| Problem | Fix |
+|---|---|
+| \`Cannot connect to the Docker daemon\` | Docker Desktop isn't running. Open it and try again. |
+| \`port is already allocated\` | Something else is using port 3000 or 8000. Stop it, or change the left-hand port in \`docker-compose.yml\`. |
+| Sign-in says the password is wrong | Run \`docker compose down -v\` to reset, then start again. |
+
+> This setup uses public development passwords and keys, so keep it on your own machine. For any real deployment, generate your own secrets and set \`ENVIRONMENT=production\`, which rejects the placeholder defaults.
+
+## Developing without Docker
+
+Only needed if you want to change the code with hot reload. You need **Python 3.12**, **Node.js 20 or newer**, and Docker for the database.
+
+\`\`\`bash
+docker compose up -d db
+\`\`\`
+
+**Backend** (one terminal):
 
 \`\`\`bash
 cd python-backend
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+source .venv/bin/activate   # Windows: .\\.venv\\Scripts\\Activate.ps1
 pip install -r requirements-dev.txt
-cp .env.example .env        # then edit the values below
+cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 \`\`\`
 
-Minimum settings in \`.env\`:
+The defaults in \`.env.example\` already match the Docker database. API docs are at \`http://localhost:8000/docs\`.
 
-\`\`\`env
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/ffinn
-JWT_SECRET_KEY=your-secret-key-min-32-chars
-ENCRYPTION_KEY=your-fernet-key
-DEFAULT_ADMIN_EMAIL=admin@localhost
-DEFAULT_ADMIN_PASSWORD=choose-a-password
-\`\`\`
-
-**Frontend**
+**Frontend** (second terminal):
 
 \`\`\`bash
 cd nextjs-frontend
 npm install
-cp .env.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:8000
+cp .env.example .env.local
 npm run dev
 \`\`\`
 
-API is live at \`http://localhost:8000\` - Swagger docs at \`http://localhost:8000/docs\` (disabled when \`ENVIRONMENT=production\`).
-Frontend is at \`http://localhost:3000\`.`
+Open \`http://localhost:3000\` and sign in with the same admin account.`
       },
       {
         id: 'configuration', title: 'Configuration',
@@ -930,7 +950,15 @@ const slug = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 
 /** Tiny renderer for the in-page docs. Styling lives in `.docs-prose` (globals.css) so it follows the theme. */
 function renderContent(md: string): string {
+  // Set code blocks aside first so the rules below can't touch them: no headings
+  // from `# comments`, and their newlines survive the final newline collapse.
+  const blocks: string[] = []
+  const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return md
+    .replace(/```(\w+)?\n?([\s\S]+?)```/g, (_, _lang, code: string) => {
+      blocks.push(`<pre><code>${escape(code.replace(/\n$/, ''))}</code></pre>`)
+      return `\u0000${blocks.length - 1}\u0000`
+    })
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     .replace(/^## (.+)$/gm, (_, h: string) => `<h2 id="${slug(h)}">${h}</h2>`)
     .replace(/\|([^\n]+)\|\n\|[-| :]+\|\n((?:\|[^\n]+\|\n?)*)/g, (_, head: string, body: string) => {
@@ -938,7 +966,6 @@ function renderContent(md: string): string {
       const rows = body.trim().split('\n').map(r => `<tr>${r.split('|').filter(Boolean).map(c => `<td>${c.trim()}</td>`).join('')}</tr>`).join('')
       return `<div class="docs-table"><table><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>`
     })
-    .replace(/```(\w+)?\n?([\s\S]+?)```/g, '<pre><code>$2</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
@@ -946,6 +973,7 @@ function renderContent(md: string): string {
     .replace(/^- (.+)$/gm, '<div class="docs-li"><span>–</span><span>$1</span></div>')
     .replace(/\n\n/g, '<div class="docs-gap"></div>')
     .replace(/\n/g, ' ')
+    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => blocks[Number(i)])
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: localpass
       POSTGRES_DB: ffinn
     ports:
-      - "5432:5432"
+      - "5433:5432"   # 5433 on your machine, so it never clashes with a Postgres you already run
     volumes:
       - ffinn_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,6 +29,9 @@ services:
       DEFAULT_ADMIN_EMAIL: admin@localhost
       DEFAULT_ADMIN_PASSWORD: ChangeMe123!
       MULTI_TENANCY_ENABLED: "true"
+    # Lets the API reach services on your machine, such as Ollama, on Linux too
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
