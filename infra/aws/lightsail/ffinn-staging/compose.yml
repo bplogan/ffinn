@@ -1,0 +1,53 @@
+# ffinn staging on the shared Lightsail host: where the build agent deploys AI-generated branches for review.
+# Lives at /opt/ffinn-staging; .github/workflows/ai-agent-staging.yml copies it there on every staging deploy.
+# Same shape as production (infra/aws/lightsail/ffinn) with its own images, database (ffinn-staging), settings
+# (api.env, mode 600, never in git) and uploads. Image tags come from /opt/ffinn-staging/.env (deploy-app.sh).
+name: ffinn-staging
+
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  # One instance only: the API runs its scheduler in-process.
+  api:
+    <<: *service
+    image: ${REGISTRY}/ffinn-api-staging:${API_TAG:-latest}
+    env_file: [api.env]
+    mem_limit: 384m
+    volumes:
+      - ./data/uploads:/app/uploads
+      - ./data/agent_uploads:/app/agent_uploads
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/monitoring/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      edge: { aliases: [ffinn-staging-api] }
+      data: {}
+
+  web:
+    <<: *service
+    image: ${REGISTRY}/ffinn-web-staging:${WEB_TAG:-latest}
+    mem_limit: 192m
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/robots.txt"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      edge: { aliases: [ffinn-staging-web] }
+
+networks:
+  edge:
+    external: true
+  data:
+    external: true

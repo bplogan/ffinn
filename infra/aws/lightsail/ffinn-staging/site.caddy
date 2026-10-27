@@ -1,0 +1,37 @@
+# ffinn staging on the shared Caddy. Upstream names are <project>-<service> aliases on the edge network.
+# Snippet names are global across every site file, hence the staging-specific name.
+
+(ffinn_staging_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Staging runs unreviewed, AI-generated branches: keep it out of search results.
+		X-Robots-Tag "noindex, nofollow"
+		-X-Powered-By
+		-Server
+	}
+}
+
+staging.ffinn.ca {
+	import ffinn_staging_headers
+	encode zstd gzip
+
+	handle /uploads/* {
+		reverse_proxy ffinn-staging-api:8000
+	}
+
+	handle {
+		reverse_proxy ffinn-staging-web:3000
+	}
+}
+
+staging-api.ffinn.ca {
+	import ffinn_staging_headers
+	encode zstd gzip
+	# Chat replies stream as server-sent events and generation progress uses WebSockets: never buffer.
+	reverse_proxy ffinn-staging-api:8000 {
+		flush_interval -1
+	}
+}

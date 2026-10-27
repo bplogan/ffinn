@@ -1,0 +1,111 @@
+name: CI — Test & Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan history for committed secrets
+        run: |
+          curl -sSfLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          echo "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --redact --no-banner -v
+
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: python-backend/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: python-backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        working-directory: python-backend
+        run: |
+          pip install ruff
+          ruff check app/ --select E,W,F --ignore E501
+
+      - name: Syntax check (AST)
+        working-directory: python-backend
+        run: |
+          python -c "
+          import ast, os, sys
+          errors = []
+          for root, dirs, files in os.walk('app'):
+              dirs[:] = [d for d in dirs if d != '__pycache__']
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      try:
+                          ast.parse(open(path).read())
+                      except SyntaxError as e:
+                          errors.append(f'{path}: {e}')
+          if errors:
+              print('\n'.join(errors)); sys.exit(1)
+          print('All files parse cleanly.')
+          "
+
+      - name: Run tests
+        working-directory: python-backend
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./test.db
+          JWT_SECRET_KEY: test-secret-key-for-ci-only
+          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dA==
+          ENVIRONMENT: test
+        run: pytest tests/ -v --tb=short -q
+
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: nextjs-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: nextjs-frontend
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: nextjs-frontend
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        working-directory: nextjs-frontend
+        run: npm test -- --passWithNoTests
+
+      - name: Build
+        working-directory: nextjs-frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: npm run build

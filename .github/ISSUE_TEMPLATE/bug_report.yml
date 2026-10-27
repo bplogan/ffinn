@@ -1,0 +1,30 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you see instead?
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Backend (FastAPI), Frontend (Next.js), AI agent, Docker / deploy, Docs, Other]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Please redact any secrets, tokens, or personal data.
+      render: shell

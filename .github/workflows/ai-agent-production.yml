@@ -1,0 +1,99 @@
+name: AI Agent - Production Release
+
+# Started by the build agent ("Release") right after it merges the generation's pull request into main. That merge is a
+# push to main, which already runs the normal AWS deploys (aws-deploy-api.yml, aws-deploy-web.yml) for whatever it
+# changed. This workflow does not deploy a second time: it waits for those runs of the merge commit, checks that
+# production is healthy, and reports the result back to the API.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Base branch that was released (main)'
+        required: true
+        type: string
+      pr_number:
+        description: 'Pull request number'
+        required: false
+        type: string
+      generation_id:
+        description: 'AI Agent generation ID'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  GENERATION_ID: ${{ inputs.generation_id }}
+  PRODUCTION_URL: https://ffinn.ca
+  PRODUCTION_API_URL: ${{ vars.API_BASE_URL }}
+
+jobs:
+  release:
+    if: github.repository == 'bplogan/ffinn'
+    name: Wait for production deploys
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check inputs
+        run: '[[ "$GENERATION_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "generation_id must be a UUID"; exit 1; }'
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - name: Wait for the deploys of the merge commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          CHANGED=$(git diff --name-only HEAD^ HEAD)
+          echo "Merge commit $SHA changed:"; echo "$CHANGED" | sed 's/^/  /'
+          WORKFLOWS=()
+          grep -qE '^(python-backend/|infra/aws/lightsail/ffinn/|\.github/workflows/aws-deploy-api\.yml)' <<<"$CHANGED" && WORKFLOWS+=(aws-deploy-api.yml)
+          grep -qE '^(nextjs-frontend/|infra/aws/lightsail/ffinn/|\.github/workflows/aws-deploy-web\.yml)' <<<"$CHANGED" && WORKFLOWS+=(aws-deploy-web.yml)
+          [ ${#WORKFLOWS[@]} -gt 0 ] || { echo "Nothing in this commit needs a deploy."; exit 0; }
+
+          for wf in "${WORKFLOWS[@]}"; do
+            echo "Waiting for $wf on $SHA"
+            # The push run can take a few seconds to appear; give it 3 minutes before giving up.
+            for i in $(seq 1 120); do
+              RUN=$(gh run list --workflow "$wf" --commit "$SHA" --event push --limit 1 --json databaseId,status,conclusion \
+                --jq '.[0] // empty | "\(.databaseId) \(.status) \(.conclusion)"')
+              if [ -z "$RUN" ]; then
+                [ "$i" -ge 18 ] && { echo "$wf never started for $SHA"; exit 1; }
+              else
+                read -r ID STATUS CONCLUSION <<<"$RUN"
+                if [ "$STATUS" = completed ]; then
+                  [ "$CONCLUSION" = success ] || { echo "$wf run $ID finished: $CONCLUSION"; exit 1; }
+                  echo "$wf run $ID succeeded"; break
+                fi
+                echo "  $wf run $ID is $STATUS"
+              fi
+              sleep 10
+            done
+            [ "${STATUS:-}" = completed ] || { echo "Timed out waiting for $wf"; exit 1; }
+            unset STATUS
+          done
+
+      - name: Check production health
+        run: |
+          curl -fsS --max-time 10 "$PRODUCTION_API_URL/api/monitoring/health" | grep -q healthy
+          curl -fsS --max-time 10 -o /dev/null "$PRODUCTION_URL/"
+          echo "Production is healthy"
+
+      - name: Report release status
+        if: ${{ !cancelled() }}
+        env:
+          CALLBACK_TOKEN: ${{ secrets.FFINN_CALLBACK_TOKEN }}
+        run: |
+          if [ "${{ job.status }}" = success ]; then
+            BODY=$(jq -nc --arg g "$GENERATION_ID" --arg u "$PRODUCTION_URL" '{generation_id:$g, success:true, production_url:$u}')
+          else
+            BODY=$(jq -nc --arg g "$GENERATION_ID" '{generation_id:$g, success:false, error:"Production deployment failed"}')
+          fi
+          curl -sS -X POST "$PRODUCTION_API_URL/api/aiagent/callback/release-status" \
+            -H "Content-Type: application/json" -H "X-Callback-Token: $CALLBACK_TOKEN" -d "$BODY"

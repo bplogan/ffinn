@@ -1,0 +1,18 @@
+title = "ffinn gitleaks config"
+
+[extend]
+useDefault = true
+
+# Allowlist exact placeholder values, not whole files: a real key pasted into docker-compose.yml or an .env.example
+# must still fail the scan.
+[allowlist]
+description = "Test fixtures and documented local-dev defaults (not real secrets)"
+regexes = [
+  '''dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dA==''',      # dummy ENCRYPTION_KEY used only by CI tests
+  '''dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGJ5dGU=''',  # dummy ENCRYPTION_KEY in docker-compose.yml (local dev only)
+]
+paths = [
+  '''python-backend/tests/''',
+  '''nextjs-frontend/src/__tests__/''',
+  '''package-lock\.json''',
+]

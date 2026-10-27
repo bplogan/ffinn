@@ -1,0 +1,229 @@
+name: AI Agent - Staging Deploy
+
+# Started by the build agent ("Deploy to staging") with a feature branch and generation ID. Tests the branch, builds
+# both images into ECR and runs them as the ffinn-staging project on the shared Lightsail host
+# (infra/aws/lightsail/ffinn-staging), then reports back to the API.
+#
+# The agent dispatches it on main, which is the only ref the AWS deploy role trusts. The feature branch is checked out
+# into its own folder and only built and tested; the deploy files always come from main.
+# No `environment:` on any job: it would change the OIDC subject and the deploy role would refuse it.
+#
+# The feature branch is unreviewed code, so its tests run in their own job with no secrets and no AWS token, inside
+# Docker containers that cannot reach the runner's cache token (a cache saved here would be shared with main). Only the later jobs get the callback token and the
+# deploy role, and they never execute the branch's code on the runner: it is only built inside Docker.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Feature branch to deploy'
+        required: true
+        type: string
+      generation_id:
+        description: 'AI Agent generation ID'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# There is one staging environment, so deploys queue instead of overlapping.
+concurrency:
+  group: ai-agent-staging
+  cancel-in-progress: false
+
+env:
+  STAGING_API_URL: https://staging-api.ffinn.ca
+  STAGING_WEB_URL: https://staging.ffinn.ca
+  TAG: g${{ github.run_id }}
+  BRANCH: ${{ inputs.branch }}
+  GENERATION_ID: ${{ inputs.generation_id }}
+  CALLBACK_BASE: ${{ vars.API_BASE_URL }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  test:
+    if: github.repository == 'bplogan/ffinn'
+    name: Test the feature branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check inputs
+        run: |
+          [[ "$GENERATION_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "generation_id must be a UUID"; exit 1; }
+          # A branch of this repository only: no refs/pull/* (fork code) or tags.
+          [[ "$BRANCH" != refs/* ]] || { echo "branch must be a branch name, not a ref"; exit 1; }
+          git check-ref-format --branch "$BRANCH" >/dev/null || { echo "Invalid branch name"; exit 1; }
+
+      # The branch's code never runs on the runner itself: anything running there can read the runner's cache token
+      # and poison main's dependency cache. Each test suite runs in a throwaway container that gets only the source
+      # folder, no token and no secrets. The scripts it runs come from main.
+      - name: Check out test scripts (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: main
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Check out the feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/${{ inputs.branch }}
+          path: feature
+          persist-credentials: false
+
+      - name: Backend lint and tests
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/feature/python-backend:/src" \
+            -v "$GITHUB_WORKSPACE/main/.github/scripts:/ci:ro" \
+            -e DATABASE_URL=sqlite+aiosqlite:///./test.db \
+            -e JWT_SECRET_KEY=test-ci-key-that-is-at-least-32-characters \
+            -e ENCRYPTION_KEY=dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dA== \
+            -e ENVIRONMENT=test \
+            python:3.12 sh /ci/staging-test-backend.sh
+
+      - name: Frontend type-check and tests
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/feature/nextjs-frontend:/src" \
+            -v "$GITHUB_WORKSPACE/main/.github/scripts:/ci:ro" \
+            -e CI=true \
+            node:22 sh /ci/staging-test-frontend.sh
+
+  report-build:
+    needs: test
+    if: ${{ !cancelled() && github.repository == 'bplogan/ffinn' }}
+    name: Report build status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report build status
+        env:
+          CALLBACK_TOKEN: ${{ secrets.FFINN_CALLBACK_TOKEN }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          if [ "$TEST_RESULT" = success ]; then
+            BODY=$(jq -nc --arg g "$GENERATION_ID" --arg u "$RUN_URL" '{generation_id:$g, success:true, build_url:$u}')
+          else
+            BODY=$(jq -nc --arg g "$GENERATION_ID" --arg u "$RUN_URL" '{generation_id:$g, success:false, error:"Build or tests failed", build_url:$u}')
+          fi
+          curl -sS -X POST "$CALLBACK_BASE/api/aiagent/callback/build-status" \
+            -H "Content-Type: application/json" -H "X-Callback-Token: $CALLBACK_TOKEN" -d "$BODY" || true
+
+  deploy:
+    needs: test
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out deploy files (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: main
+          persist-credentials: false
+
+      - name: Check out the feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/${{ inputs.branch }}
+          path: feature
+          persist-credentials: false
+
+      - name: Check staging DNS
+        env:
+          HOST: ${{ vars.LIGHTSAIL_HOST }}
+        run: |
+          for name in staging.ffinn.ca staging-api.ffinn.ca; do
+            ip=$(dig +short A "$name" | tail -1)
+            [ "$ip" = "$HOST" ] || { echo "$name resolves to '${ip:-nothing}', expected $HOST. Add an A record in Namecheap."; exit 1; }
+          done
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build and push API image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: feature/python-backend
+          file: feature/python-backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.AWS_ECR_REGISTRY }}/ffinn-api-staging:${{ env.TAG }}
+          cache-from: type=gha,scope=ffinn-api-staging
+          cache-to: type=gha,mode=max,scope=ffinn-api-staging
+
+      - name: Build and push web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: feature/nextjs-frontend
+          file: feature/nextjs-frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.STAGING_API_URL }}
+          tags: ${{ vars.AWS_ECR_REGISTRY }}/ffinn-web-staging:${{ env.TAG }}
+          cache-from: type=gha,scope=ffinn-web-staging
+          cache-to: type=gha,mode=max,scope=ffinn-web-staging
+
+      - name: Deploy on the Lightsail host
+        env:
+          HOST: ${{ vars.LIGHTSAIL_HOST }}
+          REGISTRY: ${{ vars.AWS_ECR_REGISTRY }}
+          SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh "ubuntu@$HOST" "sudo install -d -o ubuntu -g ubuntu /opt/ffinn-staging && test -f /opt/ffinn-staging/api.env"
+          scp -q main/infra/aws/lightsail/ffinn-staging/compose.yml main/infra/aws/lightsail/ffinn-staging/site.caddy "ubuntu@$HOST:/opt/ffinn-staging/"
+          aws ecr get-login-password | ssh "ubuntu@$HOST" "docker login --username AWS --password-stdin $REGISTRY"
+          ssh "ubuntu@$HOST" "REGISTRY=$REGISTRY bash /opt/edge/deploy-app.sh ffinn-staging api $TAG"
+          ssh "ubuntu@$HOST" "REGISTRY=$REGISTRY bash /opt/edge/deploy-app.sh ffinn-staging web $TAG"
+
+      - name: Wait for staging over HTTPS
+        run: |
+          # The first deploy waits for Caddy to get certificates for the two names.
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "$STAGING_API_URL/api/monitoring/health" >/dev/null \
+              && curl -fsS --max-time 10 -o /dev/null "$STAGING_WEB_URL/robots.txt"; then
+              echo "Staging is up"; exit 0
+            fi
+            echo "Waiting for staging… ($i/30)"; sleep 10
+          done
+          echo "Staging did not come up over HTTPS"; exit 1
+
+      - name: Seed the staging demo tenant
+        env:
+          CALLBACK_TOKEN: ${{ secrets.FFINN_CALLBACK_TOKEN }}
+        run: |
+          for i in $(seq 1 6); do
+            CODE=$(curl -sS -o /tmp/seed.json -w '%{http_code}' -X POST "$STAGING_API_URL/api/monitoring/seed-staging-demo" \
+              -H "X-Callback-Token: $CALLBACK_TOKEN")
+            [ "$CODE" = 200 ] && { echo "Demo tenant seeded"; exit 0; }
+            echo "Seed returned HTTP $CODE, retrying ($i/6)"; sleep 10
+          done
+          echo "Demo seed failed"; exit 1
+
+      - name: Report deploy status
+        if: always()
+        env:
+          CALLBACK_TOKEN: ${{ secrets.FFINN_CALLBACK_TOKEN }}
+        run: |
+          if [ "${{ job.status }}" = success ]; then
+            BODY=$(jq -nc --arg g "$GENERATION_ID" --arg a "$STAGING_API_URL" --arg w "$STAGING_WEB_URL" \
+              '{generation_id:$g, success:true, staging_url:$a, staging_frontend_url:$w}')
+          else
+            BODY=$(jq -nc --arg g "$GENERATION_ID" '{generation_id:$g, success:false, error:"Deployment to staging failed"}')
+          fi
+          curl -sS -X POST "$CALLBACK_BASE/api/aiagent/callback/deploy-status" \
+            -H "Content-Type: application/json" -H "X-Callback-Token: $CALLBACK_TOKEN" -d "$BODY"
+          echo "### Staging: $STAGING_WEB_URL (API $STAGING_API_URL), branch \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"

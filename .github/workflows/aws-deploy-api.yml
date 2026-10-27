@@ -1,0 +1,93 @@
+name: AWS deploy API
+
+# Builds the FastAPI backend into ECR, runs its tests first, and restarts it on the shared Lightsail host
+# (infra/aws/lightsail/ffinn). Pushes run it once the repository variable DEPLOY_TARGET is "aws"; it can always be
+# started by hand. Migrations run when the container starts (alembic upgrade head).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python-backend/**"
+      - "infra/aws/lightsail/ffinn/**"
+      - ".github/workflows/aws-deploy-api.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Builds run in parallel with other deploys; deploy-app.sh locks the host, so restarts never overlap.
+concurrency:
+  group: aws-deploy-ffinn-api
+  cancel-in-progress: false
+
+env:
+  SERVICE: api
+  IMAGE: ffinn-api
+
+jobs:
+  deploy:
+    if: (vars.DEPLOY_TARGET == 'aws' || github.event_name == 'workflow_dispatch') && github.repository == 'bplogan/ffinn'
+    name: Lightsail
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: python-backend/requirements-dev.txt
+
+      - name: Tests
+        working-directory: python-backend
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./test.db
+          JWT_SECRET_KEY: test-ci-key-for-the-deploy-gate-only-123456
+          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dA==
+          ENVIRONMENT: test
+        run: |
+          pip install -r requirements-dev.txt
+          pytest tests/ -q
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build and push image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: python-backend
+          file: python-backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ vars.AWS_ECR_REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}
+            ${{ vars.AWS_ECR_REGISTRY }}/${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=${{ env.IMAGE }}
+          cache-to: type=gha,mode=max,scope=${{ env.IMAGE }}
+
+      - name: Deploy on the Lightsail host
+        env:
+          HOST: ${{ vars.LIGHTSAIL_HOST }}
+          REGISTRY: ${{ vars.AWS_ECR_REGISTRY }}
+          SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # Shared host: /opt/edge belongs to the northforged-labs repository; /opt/ffinn is this project.
+          ssh "ubuntu@$HOST" "sudo install -d -o ubuntu -g ubuntu /opt/ffinn"
+          scp -q infra/aws/lightsail/ffinn/compose.yml infra/aws/lightsail/ffinn/site.caddy "ubuntu@$HOST:/opt/ffinn/"
+          aws ecr get-login-password | ssh "ubuntu@$HOST" "docker login --username AWS --password-stdin $REGISTRY"
+          ssh "ubuntu@$HOST" "REGISTRY=$REGISTRY bash /opt/edge/deploy-app.sh ffinn $SERVICE ${{ github.sha }}"
+          echo "### ffinn API deployed to AWS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image:** $IMAGE:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"

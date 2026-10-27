@@ -1,0 +1,56 @@
+# ── Python backend ──────────────────────────────────────────────
+python-backend/.venv/
+python-backend/__pycache__/
+python-backend/**/__pycache__/
+python-backend/**/*.pyc
+python-backend/**/*.pyo
+python-backend/.pytest_cache/
+python-backend/.mypy_cache/
+python-backend/*.egg-info/
+python-backend/dist/
+python-backend/build/
+python-backend/uploads/*
+!python-backend/uploads/.gitkeep
+python-backend/.env
+python-backend/.env.local
+python-backend/*.db
+
+# ── Next.js frontend ─────────────────────────────────────────────
+nextjs-frontend/node_modules/
+nextjs-frontend/.next/
+nextjs-frontend/out/
+nextjs-frontend/build/
+nextjs-frontend/.env
+nextjs-frontend/.env.local
+nextjs-frontend/.env.development.local
+nextjs-frontend/.env.production.local
+nextjs-frontend/tsconfig.tsbuildinfo
+
+# ── OS / editor ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# ── Secrets & local state (never commit) ─────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+test.db
+*.log
+.claude/
+.ruff_cache/
+.pytest_cache/
+.venv/
+.vscode/
+
+python-backend/agent_uploads/

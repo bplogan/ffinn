@@ -1,0 +1,58 @@
+# ffinn on the shared Lightsail host: the FastAPI backend and the Next.js frontend.
+# Lives at /opt/ffinn; GitHub Actions copies it there on deploy. Caddy in /opt/edge reaches the services on the
+# "edge" network by alias (see site.caddy). The backend reaches the shared Postgres as postgres:5432 on the "data"
+# network; its DATABASE_URL (in api.env) uses the ffinn_app login from /opt/postgres/apps/ffinn.url.
+# Image tags come from /opt/ffinn/.env (REGISTRY, API_TAG, WEB_TAG), which deploy-app.sh maintains.
+# Settings come from api.env next to this file (mode 600, never in git). The frontend needs none: its API address is
+# baked in at build time.
+name: ffinn
+
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  # One instance only: the API runs its scheduler (subscription expiry, queued generations) in-process.
+  api:
+    <<: *service
+    image: ${REGISTRY}/ffinn-api:${API_TAG:-latest}
+    env_file: [api.env]
+    mem_limit: 512m
+    # Uploaded files and chat attachments survive redeploys. The folders belong to uid 10001, the container user.
+    volumes:
+      - ./data/uploads:/app/uploads
+      - ./data/agent_uploads:/app/agent_uploads
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/monitoring/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      edge: { aliases: [ffinn-api] }
+      data: {}
+
+  web:
+    <<: *service
+    image: ${REGISTRY}/ffinn-web:${WEB_TAG:-latest}
+    mem_limit: 256m
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/robots.txt"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      edge: { aliases: [ffinn-web] }
+
+networks:
+  edge:
+    external: true
+  # The shared Postgres (/opt/postgres) is reachable as postgres:5432 on this network.
+  data:
+    external: true

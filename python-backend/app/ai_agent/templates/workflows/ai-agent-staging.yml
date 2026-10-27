@@ -1,0 +1,233 @@
+name: AI Agent - Staging Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Feature branch to deploy'
+        required: true
+        type: string
+      generation_id:
+        description: 'AI Agent generation ID'
+        required: true
+        type: string
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: python-backend/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: python-backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        working-directory: python-backend
+        run: |
+          pip install ruff
+          ruff check app/ --select E,W,F --ignore E501
+
+      - name: Run tests
+        working-directory: python-backend
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          JWT_SECRET_KEY: ${{ secrets.STAGING_JWT_SECRET_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.STAGING_ENCRYPTION_KEY }}
+          ENVIRONMENT: staging
+        run: pytest tests/ -x -q --tb=short
+
+      - name: Report build status (success)
+        if: success()
+        run: |
+          curl -s -X POST "${{ vars.API_BASE_URL }}/api/aiagent/callback/build-status" \
+            -H "Content-Type: application/json" \
+            -H "X-Callback-Token: ${{ secrets.FFINN_CALLBACK_TOKEN }}" \
+            -d "{\"generation_id\":\"${{ inputs.generation_id }}\",\"success\":true,\"build_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+
+      - name: Report build status (failure)
+        if: failure()
+        run: |
+          curl -s -X POST "${{ vars.API_BASE_URL }}/api/aiagent/callback/build-status" \
+            -H "Content-Type: application/json" \
+            -H "X-Callback-Token: ${{ secrets.FFINN_CALLBACK_TOKEN }}" \
+            -d "{\"generation_id\":\"${{ inputs.generation_id }}\",\"success\":false,\"error\":\"Build or tests failed\"}"
+
+      - name: Azure login
+        id: azure_login
+        if: success()
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build & push staging image to ACR
+        if: success()
+        run: |
+          IMAGE_TAG="staging-${{ inputs.generation_id }}"
+          az acr build \
+            --registry ${{ vars.AZURE_REGISTRY }} \
+            --image "ffinn-api:${IMAGE_TAG}" \
+            --file python-backend/Dockerfile \
+            python-backend/
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Deploy to staging Container App
+        if: success()
+        run: |
+          IMAGE="${{ vars.AZURE_REGISTRY }}.azurecr.io/ffinn-api:${{ env.IMAGE_TAG }}"
+          az containerapp update \
+            --name ${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }} \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --image "$IMAGE" \
+            --revision-suffix "g${{ github.run_id }}" \
+            --set-env-vars "ENVIRONMENT=staging" "SEED_STAGING_DEMO=true"
+
+      - name: Wait for staging API health
+        if: success()
+        run: |
+          STAGING="${{ vars.STAGING_URL }}"
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "${STAGING%/}/api/monitoring/health" >/dev/null; then
+              echo "Staging API is healthy"
+              exit 0
+            fi
+            echo "Waiting for staging API… ($i/30)"
+            sleep 10
+          done
+          echo "Staging API did not become healthy in time"
+          exit 1
+
+      - name: Wait for staging API revision
+        if: success()
+        run: |
+          STAGING="${{ vars.STAGING_URL }}"
+          for i in $(seq 1 30); do
+            if curl -fsS "${STAGING%/}/openapi.json" | grep -q 'seed-staging-demo'; then
+              echo "New staging API revision is live"
+              exit 0
+            fi
+            echo "Waiting for new API revision… ($i/30)"
+            sleep 10
+          done
+          echo "New staging API revision did not become live in time"
+          exit 1
+
+      - name: Seed staging demo tenant
+        if: success()
+        run: |
+          STAGING="${{ vars.STAGING_URL }}"
+          for i in $(seq 1 12); do
+            RESP=$(curl -sS -X POST "${STAGING%/}/api/monitoring/seed-staging-demo" \
+              -H "X-Callback-Token: ${{ secrets.FFINN_CALLBACK_TOKEN }}" \
+              -w "\nHTTP_CODE:%{http_code}")
+            echo "$RESP"
+            case "$RESP" in *HTTP_CODE:200*) echo "Staging demo tenant seeded"; exit 0 ;; esac
+            echo "Retry staging demo seed… ($i/12)"
+            sleep 10
+          done
+          echo "Staging demo seed failed after retries"
+          exit 1
+
+      - name: Set up Node.js 20
+        if: success()
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: nextjs-frontend/package-lock.json
+
+      - name: TypeScript check (frontend)
+        if: success()
+        working-directory: nextjs-frontend
+        run: npm ci && npx tsc --noEmit
+
+      - name: Deploy frontend to staging (Azure SWA)
+        id: swa_deploy
+        if: success()
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: nextjs-frontend
+          api_location: ''
+          output_location: ''
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.STAGING_URL }}
+          # StaticSitesClient reads this env var; the action's `with:` input is ignored on some runners.
+          DEPLOYMENT_ENVIRONMENT: staging
+
+      - name: Resolve staging frontend URL
+        id: staging_frontend
+        if: success()
+        run: |
+          APP=$(az staticwebapp list \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query "[?defaultHostname=='${{ vars.SWA_HOSTNAME }}'].name | [0]" -o tsv)
+          if [ -z "$APP" ]; then
+            echo "Could not find Static Web App for hostname ${{ vars.SWA_HOSTNAME }}"
+            exit 1
+          fi
+          HOST=$(az staticwebapp environment list \
+            --name "$APP" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query "[?name=='staging'].hostname | [0]" -o tsv)
+          if [ -z "$HOST" ]; then
+            echo "Staging environment not found on Static Web App $APP"
+            exit 1
+          fi
+          echo "url=https://${HOST}" >> "$GITHUB_OUTPUT"
+          echo "Staging frontend URL: https://${HOST}"
+
+      - name: Wait for staging frontend
+        if: success()
+        run: |
+          URL="${{ steps.staging_frontend.outputs.url }}"
+          for i in $(seq 1 18); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/")
+            if [ "$CODE" != "404" ] && [ "$CODE" != "000" ]; then
+              echo "Staging frontend reachable (HTTP ${CODE})"
+              exit 0
+            fi
+            echo "Waiting for staging frontend… (${i}/18)"
+            sleep 10
+          done
+          echo "Staging frontend did not become reachable at ${URL}"
+          exit 1
+
+      - name: Update staging API CORS for frontend
+        if: success()
+        run: |
+          FRONTEND="${{ steps.staging_frontend.outputs.url }}"
+          CORS="http://localhost:3000,http://localhost:4200,https://localhost:3000,https://localhost:4200,${FRONTEND},https://${{ vars.SWA_HOSTNAME }}"
+          az containerapp update \
+            --name ${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }} \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --set-env-vars "CORS_ORIGINS=${CORS}" "CORS_ORIGINS_RAW=${CORS}"
+
+      - name: Report deploy status (success)
+        if: success()
+        run: |
+          curl -s -X POST "${{ vars.API_BASE_URL }}/api/aiagent/callback/deploy-status" \
+            -H "Content-Type: application/json" \
+            -H "X-Callback-Token: ${{ secrets.FFINN_CALLBACK_TOKEN }}" \
+            -d "{\"generation_id\":\"${{ inputs.generation_id }}\",\"success\":true,\"staging_url\":\"${{ vars.STAGING_URL }}\",\"staging_frontend_url\":\"${{ steps.staging_frontend.outputs.url }}\"}"
+
+      - name: Report deploy status (failure)
+        if: failure() && steps.azure_login.outcome != 'skipped'
+        run: |
+          curl -s -X POST "${{ vars.API_BASE_URL }}/api/aiagent/callback/deploy-status" \
+            -H "Content-Type: application/json" \
+            -H "X-Callback-Token: ${{ secrets.FFINN_CALLBACK_TOKEN }}" \
+            -d "{\"generation_id\":\"${{ inputs.generation_id }}\",\"success\":false,\"error\":\"Deployment to staging failed\"}"

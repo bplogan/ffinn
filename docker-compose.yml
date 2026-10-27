@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localpass
+      POSTGRES_DB: ffinn
+    ports:
+      - "5432:5432"
+    volumes:
+      - ffinn_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ffinn"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./python-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:localpass@db:5432/ffinn
+      JWT_SECRET_KEY: local-dev-secret-key-change-in-production-32chars
+      ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGJ5dGU=
+      APP_URL: http://localhost:3000
+      CORS_ORIGINS_RAW: http://localhost:3000
+      ENVIRONMENT: development
+      DEFAULT_ADMIN_EMAIL: admin@localhost
+      DEFAULT_ADMIN_PASSWORD: ChangeMe123!
+      MULTI_TENANCY_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./nextjs-frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  ffinn_pgdata:

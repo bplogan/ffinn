@@ -1,0 +1,2 @@
+# Alembic migration versions stored here.
+# Run: alembic revision --autogenerate -m "initial"

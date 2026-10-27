@@ -1,0 +1,45 @@
+# ffinn on the shared Caddy. Upstream names are <project>-<service> aliases on the edge network.
+# Namecheap DNS has no ALIAS record for the bare domain, so every name is an A record to the server.
+
+# Security headers shared by the site and the API.
+(ffinn_security) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-X-Powered-By
+		-Server
+	}
+}
+
+# One permanent hop from www to the bare domain (the canonical address).
+www.ffinn.ca {
+	redir https://ffinn.ca{uri} permanent
+}
+
+ffinn.ca {
+	import ffinn_security
+	encode zstd gzip
+
+	# Tenant logos and other uploads are files the API serves. Send them straight there instead of through the
+	# frontend.
+	handle /uploads/* {
+		reverse_proxy ffinn-api:8000
+	}
+
+	handle {
+		reverse_proxy ffinn-web:3000
+	}
+}
+
+api.ffinn.ca {
+	import ffinn_security
+	encode zstd gzip
+	# The API streams chat replies as server-sent events and holds WebSockets for generation progress,
+	# so send every chunk as soon as it arrives instead of buffering it.
+	reverse_proxy ffinn-api:8000 {
+		flush_interval -1
+	}
+}
