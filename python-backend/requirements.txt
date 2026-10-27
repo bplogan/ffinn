@@ -32,7 +32,7 @@ stripe==11.4.1
 python3-saml==1.16.0
 
 # Notifications
-twilio==9.4.4
+twilio==9.12.0
 firebase-admin==6.9.0
 
 # Cloud providers (cloud setup wizard)
