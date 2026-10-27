@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenException, UnauthorizedException
-from app.core.permissions import Roles as RolesConfig
+from app.core.permissions import Permissions, Roles as RolesConfig
 from app.core.security import decode_token
 from app.domain.models.identity import (
     IdentityUser,
@@ -302,7 +302,22 @@ async def require_host_user(user: CurrentUser = Depends(get_current_user)) -> Cu
     return user
 
 
+def require_host_permission(permission: str):
+    """Dependency factory: platform host user who is an Admin or holds `permission`.
+
+    Being a host user is not enough on its own: people who sign up without a
+    tenant are host users too.
+    """
+    async def _dep(user: CurrentUser = Depends(require_host_user)) -> CurrentUser:
+        if not user.is_admin() and not user.has_permission(permission):
+            raise ForbiddenException(f"Missing required permission: {permission}")
+        return user
+    return _dep
+
+
 # Typed shorthand aliases
 AuthUser = Annotated[CurrentUser, Depends(get_current_user)]
 HostUser = Annotated[CurrentUser, Depends(require_host_user)]
 AdminUser = Annotated[CurrentUser, Depends(require_roles("Admin"))]
+AIAgentUser = Annotated[CurrentUser, Depends(require_host_permission(Permissions.AIAgent.USE))]
+CloudSetupUser = Annotated[CurrentUser, Depends(require_host_permission(Permissions.CloudSetup.MANAGE))]

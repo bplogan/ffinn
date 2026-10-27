@@ -198,6 +198,7 @@ async def seed_app_settings(db: AsyncSession) -> None:
         ("registration.require_email_confirmation",    str(settings.require_email_confirmation).lower(), False),
         ("registration.restricted_email_domains_enabled", "false",              False),
         ("registration.allowed_email_domains",         "",                       False),
+        ("registration.signups_get_cloud_setup",       "false",                  False),
         # Security — password
         ("security.password_min_length",       str(settings.password_min_length),         False),
         ("security.password_require_digit",    str(settings.password_require_digit).lower(), False),

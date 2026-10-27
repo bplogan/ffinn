@@ -962,6 +962,9 @@ class AuthService:
             self._db.add(IdentityUserRole(user_id=user.id, role_id=role.id))
 
     async def _assign_default_role(self, user: IdentityUser, tenant_id: Optional[uuid.UUID]) -> None:
+        if tenant_id is None and self._hs is not None and self._hs.signups_get_cloud_setup:
+            await self._assign_role(user, tenant_id, Roles.DEPLOYER)
+            return
         await self._assign_role(user, tenant_id, Roles.USER)
 
     async def _send_confirmation_email(self, user: IdentityUser, base_url: str) -> None:

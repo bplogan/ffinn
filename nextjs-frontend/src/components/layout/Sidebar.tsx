@@ -21,7 +21,7 @@ interface NavItem {
 }
 
 const AI_AGENT_NAV: NavItem = {
-  label: 'AI Agent', icon: <Bot size={18} />, highlight: true,
+  label: 'AI Agent', icon: <Bot size={18} />, highlight: true, permission: 'AIAgent.Use',
   children: [
     { label: 'Overview',       href: '/app/ai-agent',                  icon: <Sparkles size={16} /> },
     { label: 'Agents',         href: '/app/ai-agent/agents',           icon: <Bot size={16} /> },
@@ -41,20 +41,21 @@ const FEATURE_NAV: NavItem[] = [
 // AI-generated host feature nav items — DO NOT REMOVE THIS COMMENT
 const HOST_FEATURE_NAV: NavItem[] = []
 
-// Navigation for the HOST (platform owner — no tenant context)
+// Navigation for the HOST (platform owner — no tenant context). Each admin area
+// names a permission so host-level sign-ups only see what they were granted.
 const HOST_NAV: NavItem[] = [
   { label: 'Dashboard',  href: '/app/dashboard', icon: <LayoutDashboard size={18} /> },
   ...HOST_FEATURE_NAV,
-  { label: 'Tenants',    href: '/app/admin/tenants', icon: <Building2 size={18} /> },
+  { label: 'Tenants',    href: '/app/admin/tenants', icon: <Building2 size={18} />, permission: 'Tenant.Manage' },
   {
-    label: 'User Management', icon: <Users size={18} />,
+    label: 'User Management', icon: <Users size={18} />, permission: 'User.ManageRoles',
     children: [
       { label: 'Users',        href: '/app/admin/users',  icon: <Users size={16} /> },
       { label: 'Roles',        href: '/app/admin/roles',  icon: <Shield size={16} /> },
     ],
   },
   {
-    label: 'Platform Setup', icon: <Shield size={18} />,
+    label: 'Platform Setup', icon: <Shield size={18} />, permission: 'System.ManageSettings',
     children: [
       { label: 'Subscr. Plans', href: '/app/admin/subscription-plans', icon: <CreditCard size={16} /> },
       { label: 'Editions',      href: '/app/admin/editions',           icon: <Layers size={16} /> },
@@ -66,7 +67,7 @@ const HOST_NAV: NavItem[] = [
     ],
   },
   AI_AGENT_NAV,
-  { label: 'Cloud Setup', href: '/app/cloud-setup', icon: <Cloud size={18} /> },
+  { label: 'Cloud Setup', href: '/app/cloud-setup', icon: <Cloud size={18} />, permission: 'CloudSetup.View' },
 ]
 
 // Navigation for TENANT users (admins and regular users)
@@ -191,7 +192,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <div className="flex items-center justify-between h-16 px-5">
           <Link href="/app/dashboard" onClick={onClose} aria-label="ffinn dashboard" className="flex items-center gap-2.5">
             <Logo />
-            {isHost && (
+            {isHost && hasRole('Admin') && (
               <span className="rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-ink-mute ring-1 ring-ink/15">Host</span>
             )}
           </Link>

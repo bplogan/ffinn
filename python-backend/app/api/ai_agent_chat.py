@@ -16,7 +16,7 @@ from app.ai_agent.chat_service import (
     message_to_dict,
     sse,
 )
-from app.core.dependencies import DBSession, HostUser
+from app.core.dependencies import DBSession, AIAgentUser
 from app.core.exceptions import BusinessException
 from app.infrastructure.storage import read_upload_capped
 
@@ -35,14 +35,14 @@ class RenameConversationRequest(BaseModel):
 
 
 @router.get("/agents/{agent_id}/conversations")
-async def list_conversations(agent_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def list_conversations(agent_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     svc = AgentChatService(db)
     rows = await svc.list_conversations(agent_id, current_user.tenant_id, current_user.id)
     return [conversation_to_dict(c) for c in rows]
 
 
 @router.post("/agents/{agent_id}/conversations", status_code=201)
-async def create_conversation(agent_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def create_conversation(agent_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     svc = AgentChatService(db)
     try:
         convo = await svc.create_conversation(agent_id, current_user.tenant_id, current_user.id)
@@ -52,7 +52,7 @@ async def create_conversation(agent_id: uuid.UUID, db: DBSession, current_user: 
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation(conversation_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def get_conversation(conversation_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     svc = AgentChatService(db)
     convo = await svc.get_conversation(conversation_id, current_user.tenant_id, current_user.id)
     messages = await svc.list_messages(conversation_id, current_user.tenant_id, current_user.id)
@@ -61,7 +61,7 @@ async def get_conversation(conversation_id: uuid.UUID, db: DBSession, current_us
 
 @router.patch("/conversations/{conversation_id}")
 async def rename_conversation(
-    conversation_id: uuid.UUID, body: RenameConversationRequest, db: DBSession, current_user: HostUser,
+    conversation_id: uuid.UUID, body: RenameConversationRequest, db: DBSession, current_user: AIAgentUser,
 ):
     svc = AgentChatService(db)
     convo = await svc.rename_conversation(conversation_id, current_user.tenant_id, current_user.id, body.title)
@@ -69,13 +69,13 @@ async def rename_conversation(
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
-async def delete_conversation(conversation_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def delete_conversation(conversation_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     await AgentChatService(db).delete_conversation(conversation_id, current_user.tenant_id, current_user.id)
 
 
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(
-    conversation_id: uuid.UUID, body: SendMessageRequest, db: DBSession, current_user: HostUser,
+    conversation_id: uuid.UUID, body: SendMessageRequest, db: DBSession, current_user: AIAgentUser,
 ):
     """Stream the reply as server-sent events: user_message, assistant_start, token*, done."""
     if not body.content.strip() and not body.attachment_ids:
@@ -110,7 +110,7 @@ async def send_message(
 @router.post("/attachments", status_code=201)
 async def upload_attachment(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
     file: UploadFile = File(...),
 ):
     if file.size is not None and file.size > MAX_ATTACHMENT_BYTES:
@@ -134,7 +134,7 @@ async def upload_attachment(
 
 
 @router.get("/attachments/{attachment_id}")
-async def download_attachment(attachment_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def download_attachment(attachment_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     att = await AgentChatService(db).get_attachment(attachment_id, current_user.tenant_id, current_user.id)
     disposition: Optional[str] = "inline" if att.content_type.startswith("image/") else "attachment"
     return FileResponse(att.storage_path, media_type=att.content_type, filename=att.filename,
