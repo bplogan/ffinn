@@ -12,11 +12,11 @@ By participating you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). 
 
 ## Development setup
 
-You need Python 3.12, Node.js 20+, and PostgreSQL (or just Docker).
+To just run ffinn, follow the [Quick Start](README.md#quick-start). To work on the code with hot reload you need Python 3.12, Node.js 20+, and Docker for the database.
 
 ```bash
-# Everything via Docker
-docker compose up --build
+# Database (from the repo root)
+docker compose up -d db
 ```
 
 ```bash
@@ -24,7 +24,7 @@ docker compose up --build
 cd python-backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-cp .env.example .env          # generate your own JWT_SECRET_KEY / ENCRYPTION_KEY
+cp .env.example .env          # defaults already match the Docker database
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```

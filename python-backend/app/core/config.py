@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # ── Database ─────────────────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ffinn"
+    database_url: str = "postgresql+asyncpg://postgres:localpass@localhost:5433/ffinn"
     database_pool_size: int = 20
     database_max_overflow: int = 10
     database_echo: bool = False

@@ -37,19 +37,23 @@ app/
 
 ## Quick Start
 
+To just run ffinn, use the [Quick Start](../README.md#quick-start) in the main README. To run the backend on its own:
+
 ```bash
+# Start the database (from the repo root)
+docker compose up -d db
+
 cd python-backend
 
 # Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
-# Copy and configure environment
+# Copy the environment file (defaults already match the Docker database)
 cp .env.example .env
-# Edit .env with your settings
 
 # Run database migrations
 alembic upgrade head
