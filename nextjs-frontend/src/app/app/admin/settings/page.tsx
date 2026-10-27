@@ -41,6 +41,7 @@ const TAB_KEYS: Record<TabId, string[]> = {
     'registration.restricted_email_domains_enabled',
     'registration.allowed_email_domains',
     'registration.paywall_enabled',
+    'registration.signups_get_cloud_setup',
   ],
   security: [
     'security.password_min_length',
@@ -335,6 +336,11 @@ export default function AdminSettingsPage() {
                   id="registration.paywall_enabled"
                   label="Require edition selection during tenant registration"
                   desc="When enabled, new tenants must choose a pricing edition before they can complete registration. Create editions under Platform Setup → Editions."
+                />
+                <Toggle
+                  id="registration.signups_get_cloud_setup"
+                  label="Platform sign-ups can use Cloud Setup"
+                  desc="People who sign up on the platform itself (not into a tenant) get the Deployer role: they can deploy their own ffinn with Cloud Setup, using their own cloud and GitHub accounts, and nothing else. When off, they get the User role and can only view their dashboard."
                 />
               </div>
             </div>

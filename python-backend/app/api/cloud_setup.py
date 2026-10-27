@@ -19,9 +19,9 @@ from typing import Any, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.core.dependencies import DBSession, HostUser
+from app.core.dependencies import CloudSetupUser, CurrentUser, DBSession
 
-HostCloudSetup = HostUser
+HostCloudSetup = CloudSetupUser
 
 router = APIRouter(prefix="/api/cloudsetup", tags=["CloudSetup"])
 
@@ -76,15 +76,21 @@ class GitHubSetupRequest(BaseModel):
 
 
 # ── DB-backed setup state ─────────────────────────────────────────────────────
-# State is persisted at host level (tenant_id=None) via SettingsService.
+# State is persisted via SettingsService. Admins share one session per scope
+# (host or tenant); anyone else gets their own, so people who signed up to
+# deploy their own ffinn never see each other's progress.
 _SETTINGS_KEY = "CloudSetup.Session"
 _TOTAL_STEPS = 6
 
 
-async def _load_state(tenant_id: Optional[uuid.UUID], db) -> Optional[dict]:
+def _session_key(user: CurrentUser) -> str:
+    return _SETTINGS_KEY if user.is_admin() else f"{_SETTINGS_KEY}.{user.id}"
+
+
+async def _load_state(user: CurrentUser, db) -> Optional[dict]:
     """Load setup state from the app_settings table, or return None."""
     from app.services.misc_services import SettingsService
-    raw = await SettingsService(db).get_setting(_SETTINGS_KEY, tenant_id)
+    raw = await SettingsService(db).get_setting(_session_key(user), user.tenant_id)
     if raw:
         try:
             return json.loads(raw)
@@ -93,7 +99,7 @@ async def _load_state(tenant_id: Optional[uuid.UUID], db) -> Optional[dict]:
     return None
 
 
-async def _save_state(tenant_id: Optional[uuid.UUID], state: dict, db) -> None:
+async def _save_state(user: CurrentUser, state: dict, db) -> None:
     """Persist setup state to the app_settings table."""
     from app.services.misc_services import SettingsService
     # Strip raw secrets — only encrypted blobs are persisted
@@ -102,15 +108,15 @@ async def _save_state(tenant_id: Optional[uuid.UUID], state: dict, db) -> None:
         for k, v in state.items()
         if k not in ("cloud_credentials", "github_token", "cloud_validation")
     }
-    await SettingsService(db).set_setting(_SETTINGS_KEY, json.dumps(safe), tenant_id)
+    await SettingsService(db).set_setting(_session_key(user), json.dumps(safe), user.tenant_id)
 
 
-async def _get_or_create_state(tenant_id: Optional[uuid.UUID], db) -> dict:
+async def _get_or_create_state(user: CurrentUser, db) -> dict:
     """Load existing state or create a fresh default."""
-    state = await _load_state(tenant_id, db)
+    state = await _load_state(user, db)
     if state is None:
-        state = _default_state(_scope_key(tenant_id))
-        await _save_state(tenant_id, state, db)
+        state = _default_state(_scope_key(user.tenant_id))
+        await _save_state(user, state, db)
     return state
 
 
@@ -176,7 +182,7 @@ async def start_setup(
     current_user: HostCloudSetup,
 ):
     """Start a new cloud setup session or return the existing in-progress session."""
-    state = await _get_or_create_state(current_user.tenant_id, db)
+    state = await _get_or_create_state(current_user, db)
     return _to_progress(state)
 
 
@@ -186,7 +192,7 @@ async def get_progress(
     current_user: HostCloudSetup,
 ):
     """Return the current setup progress for the platform host."""
-    state = await _get_or_create_state(current_user.tenant_id, db)
+    state = await _get_or_create_state(current_user, db)
     return _to_progress(state)
 
 
@@ -198,14 +204,14 @@ async def update_step(
     current_user: HostCloudSetup,
 ):
     """Save arbitrary wizard-step data and advance the current step pointer."""
-    state = await _get_or_create_state(current_user.tenant_id, db)
+    state = await _get_or_create_state(current_user, db)
 
     # Store the step data under a generic key
     state[f"step_{step}_data"] = body.data
     if step > state["current_step"]:
         state["current_step"] = step
     state["updated_at"] = _now()
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -218,7 +224,7 @@ async def cloud_authenticate(
     """Validate cloud provider credentials and mark the step complete."""
     from app.services.cloud_setup_service import CloudSetupService
 
-    state = await _get_or_create_state(current_user.tenant_id, db)
+    state = await _get_or_create_state(current_user, db)
     validation = await CloudSetupService().validate_cloud_credentials(body.provider, body.credentials)
 
     state["cloud_provider"] = body.provider
@@ -229,7 +235,7 @@ async def cloud_authenticate(
         state["steps_pending"] = [s for s in state["steps_pending"] if s != "cloud_auth"]
         state["current_step"] = max(state["current_step"], 2)
     state["updated_at"] = _now()
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -242,7 +248,7 @@ async def cloud_provision(
     """Kick off cloud resource provisioning (async)."""
     from app.services.cloud_setup_service import CloudSetupService
 
-    state = await _load_state(current_user.tenant_id, db)
+    state = await _load_state(current_user, db)
     if not state or not state.get("cloud_authenticated"):
         from app.core.exceptions import BusinessException
         raise BusinessException("Cloud authentication is required before provisioning.")
@@ -260,7 +266,7 @@ async def cloud_provision(
     state["provisioning_status"] = result["status"]
     state["provisioning_resources"] = result.get("resources", {})
     state["updated_at"] = _now()
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -270,7 +276,7 @@ async def cloud_provision_status(
     current_user: HostCloudSetup,
 ):
     """Poll provisioning job status."""
-    state = await _load_state(current_user.tenant_id, db) or {}
+    state = await _load_state(current_user, db) or {}
     job_id = state.get("provisioning_job_id")
     provisioning_status = state.get("provisioning_status", "idle")
 
@@ -283,7 +289,7 @@ async def cloud_provision_status(
             state["steps_pending"] = [s for s in state.get("steps_pending", []) if s != "cloud_provision"]
             state["current_step"] = max(state.get("current_step", 1), 3)
         state["updated_at"] = _now()
-        await _save_state(current_user.tenant_id, state, db)
+        await _save_state(current_user, state, db)
         provisioning_status = "completed"
 
     return {
@@ -300,7 +306,7 @@ async def save_app_settings(
     current_user: HostCloudSetup,
 ):
     """Store application configuration produced by the provisioning step."""
-    state = await _load_state(current_user.tenant_id, db)
+    state = await _load_state(current_user, db)
     if not state:
         from app.core.exceptions import BusinessException
         raise BusinessException("No setup session found. Call /start first.")
@@ -313,7 +319,7 @@ async def save_app_settings(
         state["steps_pending"] = [s for s in state["steps_pending"] if s != "app_settings"]
         state["current_step"] = max(state["current_step"], 4)
     state["updated_at"] = _now()
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -326,7 +332,7 @@ async def github_authenticate(
     """Validate a GitHub token and mark the step complete."""
     from app.services.cloud_setup_service import CloudSetupService
 
-    state = await _get_or_create_state(current_user.tenant_id, db)
+    state = await _get_or_create_state(current_user, db)
     result = await CloudSetupService().validate_github_token(body.token)
 
     state["github_installation_id"] = body.installation_id
@@ -338,7 +344,7 @@ async def github_authenticate(
         state["steps_pending"] = [s for s in state["steps_pending"] if s != "github_auth"]
         state["current_step"] = max(state["current_step"], 5)
     state["updated_at"] = _now()
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -352,7 +358,7 @@ async def github_setup(
     from app.core.security import decrypt_value
     from app.services.cloud_setup_service import CloudSetupService
 
-    state = await _load_state(current_user.tenant_id, db)
+    state = await _load_state(current_user, db)
     if not state or not state.get("github_authenticated"):
         from app.core.exceptions import BusinessException
         raise BusinessException("GitHub authentication is required before repository setup.")
@@ -379,7 +385,7 @@ async def github_setup(
         state["steps_pending"] = [s for s in state["steps_pending"] if s != "github_setup"]
         state["current_step"] = max(state["current_step"], 6)
     state["updated_at"] = _now()
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -389,7 +395,7 @@ async def github_status(
     current_user: HostCloudSetup,
 ):
     """Return current GitHub integration status."""
-    state = await _load_state(current_user.tenant_id, db) or {}
+    state = await _load_state(current_user, db) or {}
     return {
         "authenticated": state.get("github_authenticated", False),
         "configured": state.get("github_configured", False),
@@ -405,7 +411,7 @@ async def complete_setup(
     current_user: HostCloudSetup,
 ):
     """Mark the cloud setup as fully complete."""
-    state = await _load_state(current_user.tenant_id, db)
+    state = await _load_state(current_user, db)
     if not state:
         from app.core.exceptions import BusinessException
         raise BusinessException("No setup session found. Call /start first.")
@@ -417,7 +423,7 @@ async def complete_setup(
     if "complete" not in state["steps_completed"]:
         state["steps_completed"].append("complete")
         state["steps_pending"] = []
-    await _save_state(current_user.tenant_id, state, db)
+    await _save_state(current_user, state, db)
     return _to_progress(state)
 
 
@@ -428,4 +434,4 @@ async def reset_setup(
 ):
     """Reset all cloud setup progress."""
     from app.services.misc_services import SettingsService
-    await SettingsService(db).delete_setting(_SETTINGS_KEY, current_user.tenant_id)
+    await SettingsService(db).delete_setting(_session_key(current_user), current_user.tenant_id)

@@ -987,6 +987,18 @@ async def revoke_invitation(
 audit_router = APIRouter(prefix="/api/audit-logs", tags=["AuditLogs"])
 
 
+def _is_host_non_admin(user: CurrentUser) -> bool:
+    """A host-level account without Admin, such as someone who signed up on the
+    platform itself. Host-wide records are not theirs to see."""
+    return user.tenant_id is None and not user.is_admin()
+
+
+def _deny_host_non_admin(user: CurrentUser) -> None:
+    if _is_host_non_admin(user):
+        from app.core.exceptions import ForbiddenException
+        raise ForbiddenException("This feature is only available to platform administrators.")
+
+
 @audit_router.get("")
 async def get_audit_logs(
     db: DBSession,
@@ -997,6 +1009,7 @@ async def get_audit_logs(
     actor_id: Optional[uuid.UUID] = None,
 ):
     from app.services.misc_services import AuditLogService
+    _deny_host_non_admin(current_user)
     items, total = await AuditLogService(db).get_logs(
         tenant_id=current_user.tenant_id,
         actor_id=actor_id,
@@ -1015,6 +1028,7 @@ async def get_audit_log(
 ):
     """Return a single audit log entry by ID."""
     from sqlalchemy import select as sa_select
+    _deny_host_non_admin(current_user)
     from app.domain.models.audit import AuditLog
     try:
         entry = (await db.execute(
@@ -1042,6 +1056,8 @@ async def get_stats(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
     from app.services.misc_services import DashboardService
+    if _is_host_non_admin(current_user):
+        return {}
     return await DashboardService(db).get_stats(current_user.tenant_id)
 
 
@@ -1052,6 +1068,8 @@ async def get_activity(
     limit: int = Query(20, ge=1, le=100),
 ):
     from app.services.misc_services import DashboardService
+    if _is_host_non_admin(current_user):
+        return []
     return await DashboardService(db).get_activity(current_user.tenant_id, limit)
 
 

@@ -47,7 +47,52 @@ function SectionCard({ title, icon, children, className }: { title: string; icon
   )
 }
 
+/** Host-level accounts without Admin, such as people who signed up on the platform
+ *  itself. They don't see platform data; they're pointed at running their own ffinn. */
+function HostMemberDashboard({ name, canDeploy }: { name?: string; canDeploy: boolean }) {
+  return (
+    <div className="space-y-8">
+      <header>
+        <p className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-mute">{format(new Date(), 'EEEE, d MMMM')}</p>
+        <h1 className="mt-2 font-display text-[clamp(1.9rem,3.2vw,2.6rem)] font-semibold leading-[1.05] tracking-[-0.035em] text-ink">
+          Welcome, <span className="site-serif">{name}</span>
+        </h1>
+      </header>
+
+      <section className="ink-scope relative overflow-hidden rounded-[22px] bg-canvas text-ink">
+        <div aria-hidden className="site-grid-bg absolute inset-0 [mask-image:radial-gradient(ellipse_60%_90%_at_85%_20%,black,transparent)]" />
+        <div aria-hidden className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-accent/25 blur-[90px]" />
+        <div className="relative flex flex-col gap-6 p-6 sm:p-8 md:flex-row md:items-center md:justify-between">
+          <div className="max-w-xl">
+            <p className="site-eyebrow"><span className="h-px w-6 bg-ink/30" aria-hidden />Your own ffinn</p>
+            <h2 className="mt-3 font-display text-[1.6rem] font-semibold leading-[1.1] tracking-[-0.03em] text-balance">
+              Agents and builds run on your own install. <span className="site-serif text-accent">Spin one up.</span>
+            </h2>
+            <p className="mt-2 text-[14.5px] leading-relaxed text-ink-soft">
+              {canDeploy
+                ? 'Cloud Setup deploys ffinn to your cloud account and connects your GitHub repository. It uses your own credentials, so everything you create is yours.'
+                : 'This account is view-only. Run ffinn on your own machine or cloud to create agents and builds.'}
+            </p>
+          </div>
+          <div className="flex flex-shrink-0 flex-wrap gap-2">
+            {canDeploy && <Link href="/app/cloud-setup" className="site-btn-primary">Open Cloud Setup <ArrowRight size={16} /></Link>}
+            <Link href="/docs" className={canDeploy ? 'site-btn-secondary' : 'site-btn-primary'}>Run it locally</Link>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
+  const { user, isHost, hasRole, hasPermission } = useAuth()
+  if (isHost && !hasRole('Admin')) {
+    return <HostMemberDashboard name={user?.firstName || user?.userName} canDeploy={hasPermission('CloudSetup.View')} />
+  }
+  return <AdminOrTenantDashboard />
+}
+
+function AdminOrTenantDashboard() {
   const { user, isHost, hasRole } = useAuth()
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({ queryKey: ['dashboard-stats'], queryFn: () => dashboardApi.stats() as Promise<DashboardStats> })
   const { data: activity, isLoading: actLoading } = useQuery<ActivityItem[]>({ queryKey: ['dashboard-activity'], queryFn: () => dashboardApi.activity() as Promise<ActivityItem[]> })

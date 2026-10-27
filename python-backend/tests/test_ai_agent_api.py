@@ -294,13 +294,9 @@ async def test_configuration_singular_alias(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_configuration_singular_alias_returns_404_when_none(client: AsyncClient):
-    """Unique user with no configs → 404.
-    NOTE: In the shared SQLite test DB all users have tenant_id=None, so all
-    configurations are visible to every user.  If any prior test created a
-    configuration it will bleed through here.  We therefore accept both 200
-    (configurations exist from other tests) and 404 (no configurations yet).
-    """
+async def test_self_registered_user_cannot_read_agent_configuration(client: AsyncClient):
+    """Someone who signs up on the platform is a host-level user without the
+    AIAgent.Use permission, so the build agent's configuration is off limits."""
     unique_email = f"noconfig_{uuid.uuid4().hex[:8]}@test.com"
     reg = await client.post("/api/auth/register", json={
         "user_name": f"noconfig_{uuid.uuid4().hex[:8]}",
@@ -320,8 +316,7 @@ async def test_configuration_singular_alias_returns_404_when_none(client: AsyncC
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = await client.get("/api/aiagent/configuration", headers=headers)
-    # 404 if no configs exist, 200 if prior tests left configs with tenant_id=None
-    assert resp.status_code in (200, 404)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

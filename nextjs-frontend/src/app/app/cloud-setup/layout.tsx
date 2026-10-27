@@ -5,17 +5,19 @@ import { useAuth } from '@/contexts/AuthContext'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 export default function CloudSetupLayout({ children }: { children: React.ReactNode }) {
-  const { isHost, isLoading } = useAuth()
+  const { isHost, isLoading, hasRole, hasPermission } = useAuth()
   const router = useRouter()
+  // Host-level sign-ups are host users too, so also require the permission the API checks
+  const allowed = isHost && (hasRole('Admin') || hasPermission('CloudSetup.View'))
 
   useEffect(() => {
-    if (!isLoading && !isHost) {
+    if (!isLoading && !allowed) {
       router.replace('/app/dashboard')
     }
-  }, [isHost, isLoading, router])
+  }, [allowed, isLoading, router])
 
   if (isLoading) return <LoadingSpinner fullPage label="Loading…" />
-  if (!isHost) return null
+  if (!allowed) return null
 
   return children
 }

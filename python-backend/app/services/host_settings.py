@@ -118,6 +118,12 @@ class HostSettings:
         return [d.strip().lower() for d in raw.split(",") if d.strip()]
 
     @property
+    def signups_get_cloud_setup(self) -> bool:
+        """When True, people who sign up on the platform itself (no tenant) get the
+        Deployer role: Cloud Setup only, instead of the User role."""
+        return self._bool("registration.signups_get_cloud_setup", False)
+
+    @property
     def paywall_enabled(self) -> bool:
         """When True, tenants must select an edition during self-registration."""
         return self._bool("registration.paywall_enabled", False)

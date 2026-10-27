@@ -12,7 +12,7 @@ import math
 
 from sqlalchemy import select as sa_select, delete as sa_delete
 
-from app.core.dependencies import DBSession, AdminUser, HostUser, verify_callback_token
+from app.core.dependencies import DBSession, AdminUser, AIAgentUser, verify_callback_token
 from app.core.config import settings
 from app.core.security_middleware import build_rate_limit_dep
 from app.schemas.ai_agent_schemas import (
@@ -41,7 +41,7 @@ _background_tasks: set[asyncio.Task] = set()
 @router.get("/queue")
 async def get_queue(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Return the current AI generation queue items for this tenant."""
     from app.domain.models.ai_agent import AIAgentQueueItem, AIAgentGeneration
@@ -94,7 +94,7 @@ class GitHubTokenRequest(BaseModel):
 )
 async def test_connection_direct(
     body: TestConnectionRequest,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Test source-control connectivity using raw credentials (no saved config required)."""
     from app.ai_agent.source_control import create_source_control_client
@@ -115,7 +115,7 @@ async def test_connection_direct(
 )
 async def test_github_connection(
     body: GitHubTokenRequest,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Validate a GitHub personal-access or fine-grained token."""
     try:
@@ -140,7 +140,7 @@ async def test_github_connection(
 )
 async def list_github_organizations(
     body: GitHubTokenRequest,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """List GitHub organizations accessible to the provided token."""
     try:
@@ -167,7 +167,7 @@ class GitHubRepoRequest(BaseModel):
 @router.post("/github-repositories")
 async def list_github_repositories(
     body: GitHubRepoRequest,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """List GitHub repositories for the token owner or an organization."""
     try:
@@ -209,7 +209,7 @@ _SC_KEYS = [
 @router.get("/source-control-config")
 async def get_source_control_config(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Return the tenant-scoped source-control configuration."""
     from app.services.misc_services import SettingsService
@@ -233,7 +233,7 @@ class SourceControlConfigRequest(BaseModel):
 async def save_source_control_config(
     body: SourceControlConfigRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Save source-control configuration for the current tenant."""
     from app.services.misc_services import SettingsService
@@ -263,7 +263,7 @@ class OptimizePromptRequest(BaseModel):
 @router.post("/optimize-prompt")
 async def optimize_prompt(
     body: OptimizePromptRequest,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Return an optimized version of the user's generation prompt."""
     from app.ai_agent.prompt_optimization import PromptOptimizationService
@@ -280,7 +280,7 @@ async def optimize_prompt(
 @router.get("/encryption-health")
 async def encryption_health(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
     _: AdminUser,
 ):
     """Check that all encrypted AI provider API keys can be decrypted."""
@@ -306,7 +306,7 @@ async def encryption_health(
 @router.post("/encryption-repair")
 async def encryption_repair(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
     _: AdminUser,
 ):
     """Re-encrypt provider API keys using the current encryption key (use after key rotation)."""
@@ -333,7 +333,7 @@ async def encryption_repair(
 @router.get("/configuration", response_model=ConfigurationResponse)
 async def get_configuration_singular(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Get the first/primary AI agent configuration for this tenant."""
     svc = AIAgentAppService(db)
@@ -347,7 +347,7 @@ async def get_configuration_singular(
 async def create_configuration_singular(
     body: CreateConfigurationRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Create an AI agent configuration (singular alias)."""
     svc = AIAgentAppService(db)
@@ -363,7 +363,7 @@ async def create_configuration_singular(
 async def save_configuration_draft(
     body: CreateConfigurationRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Save an AI agent configuration as a draft (is_active=False)."""
     svc = AIAgentAppService(db)
@@ -384,7 +384,7 @@ async def save_configuration_draft(
 @router.get("/configurations", response_model=PagedResult)
 async def list_configurations(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -399,7 +399,7 @@ async def list_configurations(
 async def create_configuration(
     body: CreateConfigurationRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     config = await svc.create_configuration(
@@ -414,7 +414,7 @@ async def create_configuration(
 async def get_configuration(
     config_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     config = await svc.get_configuration(config_id, current_user.tenant_id)
@@ -426,7 +426,7 @@ async def update_configuration(
     config_id: uuid.UUID,
     body: UpdateConfigurationRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     config = await svc.update_configuration(
@@ -440,7 +440,7 @@ async def update_configuration(
 async def delete_configuration(
     config_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     try:
@@ -453,7 +453,7 @@ async def delete_configuration(
 async def verify_connection(
     config_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     return await svc.verify_connection(config_id, current_user.tenant_id)
@@ -463,7 +463,7 @@ async def verify_connection(
 async def get_repository_setup_status(
     config_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Check whether the target repo has AI agent workflows and secrets configured."""
     from app.ai_agent.repo_setup_service import RepositorySetupService
@@ -486,7 +486,7 @@ async def setup_repository(
     config_id: uuid.UUID,
     body: RepositorySetupRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Push CI workflows to the repo and configure GitHub Actions secrets/variables."""
     from app.ai_agent.repo_setup_service import RepositorySetupService
@@ -516,7 +516,7 @@ async def setup_repository(
 @router.get("/generations", response_model=PagedResult)
 async def list_generations(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
     config_id: Optional[uuid.UUID] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -532,7 +532,7 @@ async def list_generations(
 async def create_generation(
     body: CreateGenerationRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     from app.domain.models.ai_agent import AIAgentGeneration
     from sqlalchemy import func as sa_func
@@ -576,7 +576,7 @@ async def create_generation(
 async def get_generation(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentService(db)
     gen = await svc.get_generation(generation_id, current_user.tenant_id)
@@ -589,7 +589,7 @@ async def get_generation(
 async def process_generation(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Immediately trigger processing of a queued generation (kicks off the pipeline)."""
     import asyncio
@@ -648,7 +648,7 @@ async def process_generation(
 async def get_generation_progress(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Return all recorded progress events for a generation."""
     from app.domain.models.ai_agent import AIAgentGeneration, AIAgentProgressEvent as PEvent
@@ -686,7 +686,7 @@ async def get_generation_progress(
 async def release_generation(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentService(db, websocket_manager=ws_manager)
     try:
@@ -700,7 +700,7 @@ async def release_generation(
 async def revert_generation(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentService(db, websocket_manager=ws_manager)
     try:
@@ -714,7 +714,7 @@ async def revert_generation(
 async def cancel_generation(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentService(db, websocket_manager=ws_manager)
     try:
@@ -728,7 +728,7 @@ async def cancel_generation(
 async def delete_generation(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Hard-delete a generation record."""
     from app.domain.models.ai_agent import AIAgentGeneration
@@ -769,7 +769,7 @@ class RequestChangesRequest(BaseModel):
 async def deploy_staging(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Trigger the staging CI/CD workflow for a generation."""
     svc = AIAgentService(db, websocket_manager=ws_manager)
@@ -785,7 +785,7 @@ async def request_changes(
     generation_id: uuid.UUID,
     body: RequestChangesRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Mark a generation as requiring changes after code review."""
     from app.domain.models.ai_agent import AIAgentGeneration
@@ -807,7 +807,7 @@ async def request_changes(
 async def reset_staging(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Reset the staging environment for a generation."""
     from app.domain.models.ai_agent import AIAgentGeneration
@@ -832,7 +832,7 @@ async def schedule_release(
     generation_id: uuid.UUID,
     body: ScheduleReleaseRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Schedule a generation to be released at a specific time."""
     from app.domain.models.ai_agent import AIAgentGeneration
@@ -861,7 +861,7 @@ async def schedule_release(
 async def cancel_scheduled_release(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Cancel a pending scheduled release."""
     from app.domain.models.ai_agent import AIAgentGeneration
@@ -884,7 +884,7 @@ async def cancel_scheduled_release(
 async def get_release_schedule(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Get the scheduled release info for a generation."""
     from app.domain.models.ai_agent import AIAgentGeneration
@@ -913,7 +913,7 @@ async def get_release_schedule(
 async def create_generation_alias(
     body: CreateGenerationRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await create_generation(body, db, current_user)
 
@@ -922,7 +922,7 @@ async def create_generation_alias(
 async def get_generation_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await get_generation(generation_id, db, current_user)
 
@@ -931,7 +931,7 @@ async def get_generation_alias(
 async def delete_generation_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await delete_generation(generation_id, db, current_user)
 
@@ -940,7 +940,7 @@ async def delete_generation_alias(
 async def release_generation_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await release_generation(generation_id, db, current_user)
 
@@ -949,7 +949,7 @@ async def release_generation_alias(
 async def revert_generation_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await revert_generation(generation_id, db, current_user)
 
@@ -958,7 +958,7 @@ async def revert_generation_alias(
 async def cancel_generation_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await cancel_generation(generation_id, db, current_user)
 
@@ -967,7 +967,7 @@ async def cancel_generation_alias(
 async def deploy_staging_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await deploy_staging(generation_id, db, current_user)
 
@@ -977,7 +977,7 @@ async def request_changes_alias(
     generation_id: uuid.UUID,
     body: RequestChangesRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await request_changes(generation_id, body, db, current_user)
 
@@ -986,7 +986,7 @@ async def request_changes_alias(
 async def reset_staging_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await reset_staging(generation_id, db, current_user)
 
@@ -996,7 +996,7 @@ async def schedule_release_alias(
     generation_id: uuid.UUID,
     body: ScheduleReleaseRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await schedule_release(generation_id, body, db, current_user)
 
@@ -1005,7 +1005,7 @@ async def schedule_release_alias(
 async def cancel_scheduled_release_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await cancel_scheduled_release(generation_id, db, current_user)
 
@@ -1014,7 +1014,7 @@ async def cancel_scheduled_release_alias(
 async def get_release_schedule_alias(
     generation_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     return await get_release_schedule(generation_id, db, current_user)
 
@@ -1125,7 +1125,7 @@ class EmergencyRollbackRequest(BaseModel):
 async def emergency_rollback(
     body: EmergencyRollbackRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Immediately revert a deployed generation."""
     svc = AIAgentService(db, websocket_manager=ws_manager)
@@ -1138,7 +1138,7 @@ async def emergency_rollback(
 @router.get("/providers")
 async def list_provider_configs(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     return await svc.get_provider_configs(current_user.tenant_id)
@@ -1148,7 +1148,7 @@ async def list_provider_configs(
 async def list_provider_models_route(
     body: ProviderProbeRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Live list of models (or Azure deployments) the supplied key can use. Nothing is saved."""
     return await AIAgentAppService(db).list_models(current_user.tenant_id, body)
@@ -1158,7 +1158,7 @@ async def list_provider_models_route(
 async def test_provider_credentials(
     body: ProviderProbeRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Send a tiny request with unsaved credentials and return a readable result."""
     return await AIAgentAppService(db).test_credentials(current_user.tenant_id, body)
@@ -1168,7 +1168,7 @@ async def test_provider_credentials(
 async def list_azure_provider_deployments(
     body: AzureDeploymentsRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """List deployment names + models from an Azure OpenAI resource (for setup UI)."""
     from app.ai_agent.azure_config import list_azure_deployments
@@ -1200,7 +1200,7 @@ async def list_azure_provider_deployments(
 async def get_provider_config(
     provider_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     return await svc.get_provider_config_by_id(provider_id, current_user.tenant_id)
@@ -1211,7 +1211,7 @@ async def update_provider_config(
     provider_id: uuid.UUID,
     body: ProviderConfigRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Update an existing provider configuration by ID."""
     svc = AIAgentAppService(db)
@@ -1243,7 +1243,7 @@ async def update_provider_config(
 async def delete_provider_config(
     provider_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     await svc.delete_provider_config(provider_id, current_user.tenant_id)
@@ -1253,7 +1253,7 @@ async def delete_provider_config(
 async def test_provider(
     provider_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Test API-key connectivity for a saved provider configuration."""
     svc = AIAgentAppService(db)
@@ -1264,7 +1264,7 @@ async def test_provider(
 async def calibrate_provider(
     provider_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Trigger a background calibration run for a saved provider configuration."""
     # Verify the config exists and belongs to the tenant
@@ -1282,7 +1282,7 @@ async def calibrate_provider(
 async def create_provider_config(
     body: ProviderConfigRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     svc = AIAgentAppService(db)
     try:
@@ -1328,7 +1328,7 @@ async def domain_instructions(domain_type: str):
 @router.get("/domains")
 async def list_domains(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """List custom domains registered for this tenant."""
     from app.domain.models.ai_agent import CustomDomain
@@ -1349,7 +1349,7 @@ async def list_domains(
 async def add_domain(
     body: AddDomainRequest,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Register a custom domain for this tenant."""
     import secrets
@@ -1376,7 +1376,7 @@ async def add_domain(
 async def verify_domain(
     domain_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Initiate DNS verification for a domain."""
     from app.domain.models.ai_agent import CustomDomain
@@ -1399,7 +1399,7 @@ async def verify_domain(
 async def activate_domain(
     domain_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Activate a verified domain."""
     from app.domain.models.ai_agent import CustomDomain
@@ -1423,7 +1423,7 @@ async def activate_domain(
 async def delete_domain(
     domain_id: uuid.UUID,
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     from app.domain.models.ai_agent import CustomDomain
     await db.execute(
@@ -1444,37 +1444,37 @@ aiprovider_router = APIRouter(prefix="/api/aiprovider", tags=["AIProvider"], inc
 
 
 @aiprovider_router.get("")
-async def aip_list(db: DBSession, current_user: HostUser):
+async def aip_list(db: DBSession, current_user: AIAgentUser):
     return await list_provider_configs(db, current_user)
 
 
 @aiprovider_router.get("/{provider_id}")
-async def aip_get(provider_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def aip_get(provider_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     return await get_provider_config(provider_id, db, current_user)
 
 
 @aiprovider_router.post("", status_code=201)
-async def aip_create(body: ProviderConfigRequest, db: DBSession, current_user: HostUser):
+async def aip_create(body: ProviderConfigRequest, db: DBSession, current_user: AIAgentUser):
     return await create_provider_config(body, db, current_user)
 
 
 @aiprovider_router.put("/{provider_id}")
-async def aip_update(provider_id: uuid.UUID, body: ProviderConfigRequest, db: DBSession, current_user: HostUser):
+async def aip_update(provider_id: uuid.UUID, body: ProviderConfigRequest, db: DBSession, current_user: AIAgentUser):
     return await update_provider_config(provider_id, body, db, current_user)
 
 
 @aiprovider_router.delete("/{provider_id}", status_code=204)
-async def aip_delete(provider_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def aip_delete(provider_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     return await delete_provider_config(provider_id, db, current_user)
 
 
 @aiprovider_router.post("/{provider_id}/test")
-async def aip_test(provider_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def aip_test(provider_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     return await test_provider(provider_id, db, current_user)
 
 
 @aiprovider_router.post("/{provider_id}/calibrate")
-async def aip_calibrate(provider_id: uuid.UUID, db: DBSession, current_user: HostUser):
+async def aip_calibrate(provider_id: uuid.UUID, db: DBSession, current_user: AIAgentUser):
     return await calibrate_provider(provider_id, db, current_user)
 
 
@@ -1483,7 +1483,7 @@ async def aip_calibrate(provider_id: uuid.UUID, db: DBSession, current_user: Hos
 @router.post("/ws-ticket")
 async def create_ws_ticket(
     db: DBSession,
-    current_user: HostUser,
+    current_user: AIAgentUser,
 ):
     """Issue a short-lived one-time ticket for WebSocket auth (preferred over raw JWT)."""
     from app.services.auth_service import AuthService

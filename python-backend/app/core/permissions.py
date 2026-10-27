@@ -84,6 +84,9 @@ class Roles:
     ADMIN = "Admin"
     DEVELOPER = "Developer"
     USER = "User"
+    # Host-level sign-ups when "registration.signups_get_cloud_setup" is on:
+    # they can deploy their own ffinn with Cloud Setup and nothing else.
+    DEPLOYER = "Deployer"
 
     # Default roles with their permissions
     DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
@@ -135,5 +138,10 @@ class Roles:
             Permissions.Dashboard.VIEW,
             Permissions.Files.UPLOAD,
             Permissions.Files.VIEW,
+        ],
+        DEPLOYER: [
+            Permissions.Dashboard.VIEW,
+            Permissions.CloudSetup.VIEW,
+            Permissions.CloudSetup.MANAGE,
         ],
     }
