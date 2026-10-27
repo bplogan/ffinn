@@ -3,7 +3,7 @@ import { Suspense, useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { authApi, settingsApi } from '@/lib/api'
+import { apiErrorMessage, authApi, settingsApi } from '@/lib/api'
 import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -64,8 +64,7 @@ function RegisterInner() {
       toast.success('Account created! Please check your email to confirm.')
       router.push('/auth/login')
     } catch (err: unknown) {
-      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail || 'Registration failed'
-      toast.error(msg)
+      toast.error(apiErrorMessage(err, 'Registration failed'))
     } finally { setLoading(false) }
   }
 

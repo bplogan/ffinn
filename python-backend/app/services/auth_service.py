@@ -181,7 +181,7 @@ class AuthService:
         self,
         email: str,
         password: str,
-        username: str,
+        username: Optional[str] = None,
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         tenant_name: Optional[str] = None,
@@ -202,7 +202,6 @@ class AuthService:
                 raise BusinessException(f"Registration is restricted to: {allowed}")
 
         normalized_email = email.upper()
-        normalized_username = username.upper()
 
         # Resolve or create tenant
         tenant_id: Optional[uuid.UUID] = None
@@ -230,16 +229,28 @@ class AuthService:
                 created_new_tenant = True
             tenant_id = tenant.id
 
-        # Check uniqueness
+        # Check uniqueness. Only a username the person chose can clash; one derived
+        # from the email gets a number added instead (brad, brad2, ...).
         exists = await self._db.execute(
-            select(IdentityUser).where(
+            select(IdentityUser.id).where(
                 IdentityUser.tenant_id == tenant_id,
-                (IdentityUser.normalized_email == normalized_email)
-                | (IdentityUser.normalized_user_name == normalized_username),
+                IdentityUser.normalized_email == normalized_email,
             )
         )
-        if exists.scalar_one_or_none():
-            raise ConflictException("Email or username is already in use")
+        if exists.first():
+            raise ConflictException("An account with this email already exists")
+        if username:
+            taken = await self._db.execute(
+                select(IdentityUser.id).where(
+                    IdentityUser.tenant_id == tenant_id,
+                    IdentityUser.normalized_user_name == username.upper(),
+                )
+            )
+            if taken.first():
+                raise ConflictException("That username is already taken")
+        else:
+            username = await self._free_username(email.split("@")[0], tenant_id)
+        normalized_username = username.upper()
 
         # Validate password policy before creating the user
         hs = self._hs
@@ -307,6 +318,21 @@ class AuthService:
             "email_confirmation_required": False,
             "user_id": str(user.id),
         }
+
+    async def _free_username(self, base: str, tenant_id: Optional[uuid.UUID]) -> str:
+        """Return `base`, or `base2`, `base3`, ... whichever is unused in the tenant."""
+        rows = await self._db.execute(
+            select(IdentityUser.normalized_user_name).where(
+                IdentityUser.tenant_id == tenant_id,
+                IdentityUser.normalized_user_name.startswith(base.upper(), autoescape=True),
+            )
+        )
+        used = set(rows.scalars())
+        candidate, n = base, 1
+        while candidate.upper() in used:
+            n += 1
+            candidate = f"{base}{n}"
+        return candidate
 
     # ── Refresh token ─────────────────────────────────────────────────────────
     async def refresh_token(self, refresh_token: str) -> dict:

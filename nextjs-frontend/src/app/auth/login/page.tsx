@@ -10,7 +10,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import toast from 'react-hot-toast'
 import { Mail, Lock, Eye, EyeOff, Building2, ChevronDown, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react'
-import { authApi, settingsApi, tokenStore } from '@/lib/api'
+import { apiErrorMessage, authApi, settingsApi, tokenStore } from '@/lib/api'
 import type { SsoProvider } from '@/types'
 import { AuthHeading, authLink } from '../AuthShell'
 
@@ -125,7 +125,7 @@ function LoginPageContent() {
       toast.success('Welcome back!')
       router.push('/app/dashboard')
     } catch (err: unknown) {
-      const msg = (err as {response?: {data?: {detail?: string}}})?.response?.data?.detail || 'Invalid credentials'
+      const msg = apiErrorMessage(err, 'Invalid credentials')
       toast.error(msg)
     }
   }
