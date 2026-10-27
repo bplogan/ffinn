@@ -25,7 +25,6 @@ const footerColumns = [
       { label: 'Features', href: '/#foundation' },
       { label: 'Guardrails', href: '/#guardrails' },
       { label: 'Documentation', href: '/docs' },
-      { label: 'Sign in', href: '/auth/login' },
     ],
   },
   {
