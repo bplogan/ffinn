@@ -122,6 +122,15 @@ api.interceptors.response.use(
   },
 )
 
+/** The API's error text: `message` from app exceptions (or the first field error
+ *  for validation failures), `detail` from FastAPI's own. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const data = (err as AxiosError<{ message?: string; details?: { msg?: string }[]; detail?: unknown }>)?.response?.data
+  if (data?.details?.[0]?.msg) return data.details[0].msg.replace(/^value is not a valid email address: /, '')
+  if (data?.message) return data.message
+  return typeof data?.detail === 'string' ? data.detail : fallback
+}
+
 // ── Typed helpers ──────────────────────────────────────────────
 export async function get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
   const r = await api.get<T>(url, { params })

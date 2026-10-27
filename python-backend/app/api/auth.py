@@ -114,7 +114,7 @@ async def register(body: RegisterRequest, request: Request, db: DBSession):
         raise BusinessException("An edition must be selected before registering.")
     svc = await _make_auth_svc(db)
     result = await svc.register(
-        username=body.resolved_user_name(),
+        username=body.user_name,
         email=body.email,
         password=body.password,
         first_name=body.first_name,

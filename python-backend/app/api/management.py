@@ -214,7 +214,6 @@ async def register_tenant(body: TenantSelfRegisterRequest, db: DBSession):
     if hs.paywall_enabled and body.edition_id is None:
         raise BusinessException("An edition must be selected before registering.")
     return await AuthService(db, host_settings=hs).register(
-        username=body.admin_email.split("@")[0],
         email=body.admin_email,
         password=body.admin_password,
         first_name=body.admin_first_name,

@@ -38,11 +38,6 @@ class RegisterRequest(BaseModel):
     def password_not_empty(cls, v: str) -> str:
         return _require_password(v)
 
-    def resolved_user_name(self) -> str:
-        if self.user_name:
-            return self.user_name
-        return self.email.split("@")[0]
-
 
 class TokenResponse(BaseModel):
     access_token: str
