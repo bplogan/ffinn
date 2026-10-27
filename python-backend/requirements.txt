@@ -33,7 +33,7 @@ python3-saml==1.16.0
 
 # Notifications
 twilio==9.4.4
-firebase-admin==6.6.0
+firebase-admin==6.9.0
 
 # Cloud providers (cloud setup wizard)
 boto3==1.35.99
