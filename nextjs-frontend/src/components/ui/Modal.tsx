@@ -1,5 +1,6 @@
 'use client'
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -23,7 +24,11 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
 
   const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }
 
-  return (
+  // Rendered into <body> so the page around it can't shift the overlay
+  // (a parent's space-y-* margin used to leave a gap at the top). The `.site`
+  // wrapper brings the theme tokens along; it has no size, so it paints nothing.
+  return createPortal(
+    <div className="site">
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
       <div className={clsx('relative w-full bg-surface text-ink rounded-[22px] ring-1 ring-ink/10 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.5)] flex flex-col max-h-[90vh]', sizes[size])}>
@@ -42,5 +47,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
         )}
       </div>
     </div>
+    </div>,
+    document.body,
   )
 }

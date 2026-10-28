@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Website](https://img.shields.io/badge/website-ffinn.ca-6366f1)](https://ffinn.ca)
 
+[![Describe what your business needs. ffinn ships it.](.github/assets/social-preview.png)](https://ffinn.ca)
+
 **ffinn** is a free, MIT-licensed, **multi-tenant SaaS starter kit** with built-in **AI agents**. You get a production-minded foundation (auth, roles, billing, admin) plus:
 
 - a **build agent** that turns plain-English feature requests into code, pull requests, staging deployments and production releases, and
@@ -12,6 +14,8 @@
 Bring your own keys for OpenAI, Anthropic Claude, Google Gemini, Azure OpenAI, GitHub Models, Ollama or any OpenAI-compatible server. No licence fees and no vendor lock-in.
 
 Built with a **Python/FastAPI** backend and a **Next.js** frontend. Website and docs: **[ffinn.ca](https://ffinn.ca)**.
+
+**Try it in a few minutes:** all you need is Docker. See the [Quick Start](#quick-start).
 
 ## Features
 
@@ -22,8 +26,25 @@ Built with a **Python/FastAPI** backend and a **Next.js** frontend. Website and 
 - **AI build agent**: describe a feature, review the generated branch/PR, deploy to staging, promote to production, or revert. Generated code is checked against the framework's patterns.
 - **AI chat assistants**: create as many agents as you need, each responsible for its own job. Streaming chat, file and image upload, and per-user history.
 - **Bring your own AI**: OpenAI, Anthropic Claude, Google Gemini, Azure OpenAI, GitHub Models, Ollama, or any OpenAI-compatible server. Live model lists and a connection test before you save.
-- **Cloud setup**: guided provisioning helpers for Azure, AWS, GCP, Oracle Cloud and local, plus CI/CD workflows. ffinn.ca itself runs on the AWS reference setup in `infra/aws/`
+- **Cloud setup**: a guided wizard that checks your Azure, AWS, GCP or Oracle Cloud credentials and adds a CI/CD workflow to your GitHub repository. ffinn.ca itself runs on the AWS reference setup in `infra/aws/`
 - **Admin console**: users, roles, tenants, settings, feature flags, audit logs
+
+## Screenshots
+
+**Agents.** The build agent ships code; assistants handle everything else, each with its own instructions and AI key.
+
+![Agents hub with the build agent and three assistants](.github/assets/agents.png)
+
+<table>
+  <tr>
+    <td width="50%"><b>Build agent.</b> Describe a feature in plain English. ffinn writes it, opens a pull request and deploys a staging preview.</td>
+    <td width="50%"><b>Bring your own AI.</b> OpenAI, Claude, Gemini, GitHub Models, a local Ollama or any OpenAI-compatible server.</td>
+  </tr>
+  <tr>
+    <td><img src=".github/assets/build-agent.png" alt="Generate Code form with a feature request filled in"></td>
+    <td><img src=".github/assets/providers.png" alt="Add AI Provider dialog listing the supported providers"></td>
+  </tr>
+</table>
 
 ## Contributing
 

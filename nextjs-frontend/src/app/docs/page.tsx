@@ -787,7 +787,7 @@ The deploy workflows only run in \`bplogan/ffinn\`. If you fork ffinn, change th
 
 ## Other clouds
 
-Any host that runs the two containers works. The portal's **Cloud Setup** page offers provisioning helpers for Azure, AWS, GCP, Oracle Cloud and a local option, and the build agent's workflow templates (\`python-backend/app/ai_agent/templates/workflows/\`) can be adapted to your own deploy steps.`
+Any host that runs the two containers works. The portal's **Cloud Setup** wizard checks your Azure, AWS, GCP or Oracle Cloud credentials and adds a CI/CD workflow to your GitHub repository, and the build agent's workflow templates (\`python-backend/app/ai_agent/templates/workflows/\`) can be adapted to your own deploy steps.`
       },
     ]
   },
