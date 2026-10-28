@@ -64,9 +64,6 @@ export default function SiteNav({ active }: { active?: 'home' | 'how' | 'docs' }
 
         <div className="flex items-center gap-1.5">
           <ThemeToggle />
-          <Link href="/auth/login" className="hidden rounded-full px-3.5 py-2 text-[14px] text-ink-soft transition-colors hover:text-ink sm:block">
-            Sign in
-          </Link>
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="site-btn-primary hidden h-9 px-4 text-[14px] sm:inline-flex">
             <SiGithub size={15} aria-hidden /> Star on GitHub
           </a>
@@ -96,9 +93,6 @@ export default function SiteNav({ active }: { active?: 'home' | 'how' | 'docs' }
                 {l.label}
               </Link>
             ))}
-            <Link href="/auth/login" onClick={() => setOpen(false)} className="border-b py-4 font-display text-2xl font-medium tracking-[-0.02em]">
-              Sign in
-            </Link>
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="site-btn-primary mt-8 h-12">
               <SiGithub size={16} aria-hidden /> Star on GitHub
             </a>
