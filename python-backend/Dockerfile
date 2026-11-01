@@ -1,5 +1,5 @@
 # ── Python Backend — ffinn API ───────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Build tools needed by some native wheels (e.g. asyncpg on non-standard arches)
 # `curl` is included for the HEALTHCHECK probe.
