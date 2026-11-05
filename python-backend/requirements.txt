@@ -57,7 +57,7 @@ orjson==3.11.6
 python-dateutil==2.9.0
 pytz==2025.1
 pillow==13.0.0  # Image processing for logo upload
-pypdf==6.21.2    # Text extraction for chat attachments
+pypdf==6.21.4    # Text extraction for chat attachments
 
 # AI Providers
 openai==1.109.1
