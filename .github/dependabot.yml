@@ -25,6 +25,11 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Moving to a new Python minor version is a deliberate change: native wheels
+      # such as pydantic-core can lag behind it, and CI tests on 3.12, so it would
+      # not catch a failing image build.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor"]
   - package-ecosystem: docker
     directory: /nextjs-frontend
     schedule: { interval: monthly }
