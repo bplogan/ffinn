@@ -4,4 +4,4 @@
 pytest==9.1.1
 pytest-asyncio==1.4.1
 aiosqlite==0.22.1   # SQLite driver for tests
-ruff==0.9.0         # Linting
+ruff==0.17.3         # Linting
